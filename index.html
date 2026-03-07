@@ -1148,6 +1148,10 @@
               <i class="fa-solid fa-bug"></i>
               Testar
             </button>
+            <button class="btn btn-premium btn-premium-secondary" id="btn-clear-local-cache" type="button">
+              <i class="fa-solid fa-broom"></i>
+              Limpar Cache Local
+            </button>
           </div>
 
           <div class="row g-2 align-items-end mb-2">
@@ -1496,6 +1500,41 @@ try {
     });
   }
 
+  function clearAppLocalCache() {
+    memCur = [];
+    memHist = [];
+    try { localStorage.removeItem(LS_CUR); } catch (e) {}
+    try { localStorage.removeItem(LS_HIS); } catch (e) {}
+    return openAppDB().then(function(idb){
+      if (!idb) return;
+      return new Promise(function(resolve){
+        var tx = idb.transaction(IDB_STORE, 'readwrite');
+        tx.objectStore(IDB_STORE).delete(LS_CUR);
+        tx.objectStore(IDB_STORE).delete(LS_HIS);
+        tx.oncomplete = function(){ resolve(); };
+        tx.onerror = function(){ resolve(); };
+      });
+    }).catch(function(){ /* ignore */ }).then(function(){
+      renderTable();
+      renderHist();
+      updateCharts();
+      renderCloudTable();
+    });
+  }
+
+  function normalizeImportedRow(row) {
+    var out = Object.assign({}, row || {});
+    out.OM = text(out.OM).trim();
+    out.DATA = normDate(out.DATA);
+    out['ÁREA'] = text(out['ÁREA']).trim();
+    out.TAG = text(out.TAG).trim();
+    out['ESPECIFICAÇÃO'] = text(out['ESPECIFICAÇÃO']).trim();
+    out.STATUS = canonicalStatus(out.STATUS || 'Pendente');
+    out.SISTEMA = deriveSistema(out.TAG, out['ÁREA'], out.SISTEMA);
+    out.REGIAO = deriveRegiao(out['ÁREA']) || out.REGIAO || '';
+    return out;
+  }
+
   function queueCloudSync() {
     if (isPullingFromCloud) return;
     clearTimeout(syncTimer);
@@ -1797,7 +1836,7 @@ try {
     var seen = Object.create(null), out = [];
     for (var i = 0; i < (rows || []).length; i++) {
       var r = rows[i] || {};
-      var key = [norm(r.OM), norm(r.DATA), norm(r.TAG), norm(r['ESPECIFICAÇÃO'])].join('||').toLowerCase();
+      var key = [norm(r.OM), norm(r.DATA), norm(r.TAG), norm(r['ÁREA']), norm(r['ESPECIFICAÇÃO'])].join('||').toLowerCase();
       if (!key.replace(/\|/g,'')) { out.push(r); continue; }
       if (seen[key]) continue;
       seen[key] = 1;
@@ -1806,22 +1845,34 @@ try {
     return out;
   }
 
-  on($('btn-importar'), 'click', function() {
+  on($('btn-importar'), 'click', async function() {
     try {
       if (!parsed || !parsed.length) { alert('Nenhum dado analisado. Selecione arquivo ou cole texto.'); return; }
+      var btnImport = $('btn-importar');
+      if (btnImport) { btnImport.disabled = true; btnImport.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Importando...'; }
       var replace = $('replace-mode').checked;
       var base = replace ? [] : loadAll().slice();
-      for (var i = 0; i < parsed.length; i++) base.push(parsed[i]);
+      var normalizedParsed = parsed.map(normalizeImportedRow);
+      for (var i = 0; i < normalizedParsed.length; i++) base.push(normalizedParsed[i]);
       var before = base.length;
       base = dedupeRows(base);
-      saveAll(base); 
-      renderTable(); 
+      saveAll(base);
+      renderTable();
       updateCharts();
-      queueCloudSync();
       var removidas = before - base.length;
-      alert('Importadas ' + parsed.length + ' linhas.' + (removidas > 0 ? ' Duplicatas evitadas: ' + removidas + '.' : ''));
-    } catch (err) { 
-      alert('Erro no Importar: ' + (err.message || err)); 
+      var synced = false;
+      try {
+        await cloudPush(true);
+        synced = true;
+      } catch (syncErr) {
+        console.warn('Importação salva localmente; sincronização adiada.', syncErr);
+      }
+      alert('Importadas ' + normalizedParsed.length + ' linhas.' + (removidas > 0 ? ' Duplicatas evitadas: ' + removidas + '.' : '') + (synced ? ' Banco na nuvem atualizado.' : ' Salvo localmente/IndexedDB; use Subir ou Conectar para mandar ao Firebase.'));
+    } catch (err) {
+      alert('Erro no Importar: ' + (err.message || err));
+    } finally {
+      var btnImport = $('btn-importar');
+      if (btnImport) { btnImport.disabled = false; btnImport.innerHTML = '<i class="fa-solid fa-cloud-arrow-up"></i> Importar'; }
     }
   });
 
@@ -2497,17 +2548,34 @@ try {
   async function cloudPush(silent) {
     var adb = await ensureFirebaseReady();
     await ensureInitialCollections();
-    var batch = adb.batch();
-    var ativos = loadAll();
-    var hist = loadHist();
-    ativos.forEach(function(r){ batch.set(adb.collection(COLLECTION).doc(getCloudId(r,false)), mapLocalToCloud(r,false), {merge:true}); });
-    hist.forEach(function(r){ batch.set(adb.collection(COLLECTION).doc(getCloudId(r,true)), mapLocalToCloud(r,true), {merge:true}); });
-    batch.set(adb.collection('limpezas_backup').doc('ultimo_envio'), {
-      total_ativos: ativos.length,
-      total_historico: hist.length,
-      atualizado_em: new Date().toISOString()
-    }, {merge:true});
-    await batch.commit();
+    var ativos = (loadAll() || []).map(function(r){ return normalizeImportedRow(r); });
+    var hist = (loadHist() || []).map(function(r){ return normalizeImportedRow(r); });
+    var docs = [];
+    ativos.forEach(function(r){ docs.push({id:getCloudId(r,false), data:mapLocalToCloud(r,false)}); });
+    hist.forEach(function(r){ docs.push({id:getCloudId(r,true), data:mapLocalToCloud(r,true)}); });
+    var chunkSize = 400;
+    for (var start = 0; start < docs.length; start += chunkSize) {
+      var batch = adb.batch();
+      var chunk = docs.slice(start, start + chunkSize);
+      chunk.forEach(function(item){
+        batch.set(adb.collection(COLLECTION).doc(item.id), item.data, {merge:true});
+      });
+      if (start === 0) {
+        batch.set(adb.collection('limpezas_backup').doc('ultimo_envio'), {
+          total_ativos: ativos.length,
+          total_historico: hist.length,
+          atualizado_em: new Date().toISOString()
+        }, {merge:true});
+      }
+      await batch.commit();
+    }
+    if (!docs.length) {
+      await adb.collection('limpezas_backup').doc('ultimo_envio').set({
+        total_ativos: 0,
+        total_historico: 0,
+        atualizado_em: new Date().toISOString()
+      }, {merge:true});
+    }
     if (!silent) alert('Enviado para o Firebase com sucesso.');
   }
 
@@ -2597,8 +2665,7 @@ try {
     for (var i = 0; i < cloudCache.length; i++) {
       var r = cloudCache[i];
       var tr = document.createElement('tr');
-      var espec = '<div class="clamp">' + text(r.especificacao || '').replace(/
-/g, '<br>') + '</div>';
+      var espec = '<div class="clamp">' + text(r.especificacao || '').replace(/\n/g, '<br>') + '</div>';
       var arq = r.is_archived ? 'Sim' : 'Não';
       tr.innerHTML =
         '<td>' + (r.om || '-') + '</td><td>' + (r.data || '-') + '</td><td>' + (r.area || '-') + '</td>' +
