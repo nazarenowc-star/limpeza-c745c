@@ -629,6 +629,16 @@
   .cloud-state.disconnected {
     background: var(--samarco-red);
   }
+
+  .cloud-secret {
+    -webkit-text-security: disc;
+    font-family: 'Courier New', monospace;
+    letter-spacing: 0.08em;
+  }
+
+  .cloud-secret::placeholder {
+    letter-spacing: normal;
+  }
 </style>
 <noscript><div class="alert alert-danger m-2">Este arquivo precisa de JavaScript habilitado.</div></noscript>
 </head>
@@ -1151,6 +1161,10 @@
             <button class="btn btn-premium btn-premium-secondary" id="btn-clear-local-cache" type="button">
               <i class="fa-solid fa-broom"></i>
               Limpar Cache Local
+            </button>
+            <button class="btn btn-premium btn-premium-danger" id="btn-cloud-reset" type="button">
+              <i class="fa-solid fa-cloud-meatball"></i>
+              Limpar Nuvem
             </button>
           </div>
 
@@ -2468,11 +2482,70 @@ try {
   });
 
 
+
   // Nuvem Firebase
-  function getCloudId(r, isArchived) {
-    var parts = [text(r.OM||'').trim(), text(r.TAG||'').trim(), text(r.DATA||'').trim(), isArchived ? 'hist' : 'ativo'];
+  function maskCloudValue(value, keepEnd) {
+    var raw = text(value || '');
+    if (!raw) return '••••••••';
+    var visible = Math.max(0, keepEnd || 0);
+    if (raw.length <= visible) return raw;
+    return '•'.repeat(Math.max(8, raw.length - visible)) + raw.slice(-visible);
+  }
+
+  function refreshMaskedCloudFields() {
+    if ($('sb-url')) $('sb-url').value = maskCloudValue(firebaseConfig.projectId || '', 0);
+    if ($('sb-key')) $('sb-key').value = maskCloudValue(firebaseConfig.appId || '', 6);
+  }
+
+  function getCloudId(r) {
+    var parts = [
+      text(r.OM || '').trim(),
+      text(r.DATA || '').trim(),
+      text(r['ÁREA'] || '').trim(),
+      text(r.TAG || '').trim()
+    ];
     var id = parts.join('|').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9|_-]+/g, '-');
     return id || ('item-' + Date.now() + '-' + Math.random().toString(36).slice(2,8));
+  }
+
+  function getLegacyCloudIds(r) {
+    var base = getCloudId(r);
+    var oldBase = [
+      text(r.OM || '').trim(),
+      text(r.TAG || '').trim(),
+      text(r.DATA || '').trim()
+    ].join('|').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9|_-]+/g, '-');
+    var ids = {};
+    [base, oldBase, oldBase + '|ativo', oldBase + '|hist'].forEach(function(x) { if (x) ids[x] = true; });
+    return Object.keys(ids);
+  }
+
+  function cloudRecordSortValue(r) {
+    var stamp = r && (r.updated_at || r.archived_at || r.created_at || r.data || '');
+    var n = Date.parse(stamp);
+    return isNaN(n) ? 0 : n;
+  }
+
+  function dedupeCloudRecords(records) {
+    var best = {};
+    (records || []).forEach(function(r) {
+      var local = mapCloudToLocal(r || {});
+      var key = getCloudId(local);
+      if (!key) return;
+      if (!best[key]) {
+        best[key] = Object.assign({}, r || {});
+        return;
+      }
+      var prev = best[key];
+      var prevScore = cloudRecordSortValue(prev);
+      var nextScore = cloudRecordSortValue(r);
+      var nextArchived = !!(r && r.is_archived);
+      var prevArchived = !!(prev && prev.is_archived);
+      if (nextScore > prevScore || (nextScore === prevScore && nextArchived && !prevArchived)) {
+        best[key] = Object.assign({}, r || {});
+      }
+    });
+    return Object.keys(best).map(function(k) { return best[k]; });
   }
 
   function setCloudState(t) {
@@ -2501,6 +2574,7 @@ try {
       is_archived: !!isArchived,
       archived_at: isArchived ? (r.ARQUIVADO_EM || new Date().toISOString()) : null,
       updated_at: new Date().toISOString(),
+      doc_key: getCloudId(r),
       source: 'html_limpeza_v7_firebase'
     };
   }
@@ -2545,14 +2619,61 @@ try {
     }
   }
 
+  async function deleteCloudDocIds(ids) {
+    var adb = await ensureFirebaseReady();
+    var cleanIds = (ids || []).filter(Boolean);
+    if (!cleanIds.length) return 0;
+    var total = 0;
+    for (var start = 0; start < cleanIds.length; start += 400) {
+      var batch = adb.batch();
+      cleanIds.slice(start, start + 400).forEach(function(id) {
+        batch.delete(adb.collection(COLLECTION).doc(id));
+        total++;
+      });
+      await batch.commit();
+    }
+    return total;
+  }
+
   async function cloudPush(silent) {
     var adb = await ensureFirebaseReady();
     await ensureInitialCollections();
+
     var ativos = (loadAll() || []).map(function(r){ return normalizeImportedRow(r); });
     var hist = (loadHist() || []).map(function(r){ return normalizeImportedRow(r); });
-    var docs = [];
-    ativos.forEach(function(r){ docs.push({id:getCloudId(r,false), data:mapLocalToCloud(r,false)}); });
-    hist.forEach(function(r){ docs.push({id:getCloudId(r,true), data:mapLocalToCloud(r,true)}); });
+
+    var desiredMap = {};
+    ativos.forEach(function(r){
+      var id = getCloudId(r);
+      desiredMap[id] = { id: id, data: mapLocalToCloud(r, false), local: r };
+    });
+    hist.forEach(function(r){
+      var id = getCloudId(r);
+      desiredMap[id] = { id: id, data: mapLocalToCloud(r, true), local: r };
+    });
+
+    var snap = await adb.collection(COLLECTION).get();
+    var existingIds = [];
+    var staleIds = [];
+    snap.forEach(function(doc){
+      existingIds.push(doc.id);
+      var d = doc.data() || {};
+      var local = mapCloudToLocal(d);
+      var canonicalId = getCloudId(local);
+      if (desiredMap[doc.id]) return;
+      if (canonicalId && desiredMap[canonicalId]) {
+        staleIds.push(doc.id);
+        return;
+      }
+      if (d.doc_key && desiredMap[d.doc_key]) {
+        staleIds.push(doc.id);
+        return;
+      }
+    });
+
+    if (staleIds.length) await deleteCloudDocIds(staleIds);
+
+    var docs = Object.keys(desiredMap).map(function(id){ return desiredMap[id]; });
     var chunkSize = 400;
     for (var start = 0; start < docs.length; start += chunkSize) {
       var batch = adb.batch();
@@ -2564,19 +2685,30 @@ try {
         batch.set(adb.collection('limpezas_backup').doc('ultimo_envio'), {
           total_ativos: ativos.length,
           total_historico: hist.length,
-          atualizado_em: new Date().toISOString()
+          atualizado_em: new Date().toISOString(),
+          removidos_duplicados: staleIds.length
         }, {merge:true});
       }
       await batch.commit();
     }
+
     if (!docs.length) {
       await adb.collection('limpezas_backup').doc('ultimo_envio').set({
         total_ativos: 0,
         total_historico: 0,
-        atualizado_em: new Date().toISOString()
+        atualizado_em: new Date().toISOString(),
+        removidos_duplicados: staleIds.length
       }, {merge:true});
     }
-    if (!silent) alert('Enviado para o Firebase com sucesso.');
+
+    cloudCache = docs.map(function(item){ return Object.assign({ __id: item.id }, item.data); });
+    renderCloudTable();
+
+    if (!silent) {
+      var msg = 'Enviado para o Firebase com sucesso.';
+      if (staleIds.length) msg += ' Duplicatas antigas removidas: ' + staleIds.length + '.';
+      alert(msg);
+    }
   }
 
   async function cloudPull(silent) {
@@ -2587,13 +2719,18 @@ try {
       var snap = await adb.collection(COLLECTION).get();
       var data = [];
       snap.forEach(function(doc){ var d = doc.data() || {}; d.__id = doc.id; data.push(d); });
+      data = dedupeCloudRecords(data);
       cloudCache = data;
       var atuais = [], hist = [];
       data.forEach(function(r){ (r.is_archived ? hist : atuais).push(mapCloudToLocal(r)); });
-      memCur = atuais; memHist = hist;
+      memCur = atuais;
+      memHist = hist;
       persistLocal(LS_CUR, memCur);
       persistLocal(LS_HIS, memHist);
-      renderTable(); renderHist(); updateCharts(); renderCloudTable();
+      renderTable();
+      renderHist();
+      updateCharts();
+      renderCloudTable();
       if (!silent) alert('Dados sincronizados do Firebase.');
     } finally {
       isPullingFromCloud = false;
@@ -2605,7 +2742,71 @@ try {
     var snap = await adb.collection(COLLECTION).orderBy('updated_at','desc').limit(500).get();
     cloudCache = [];
     snap.forEach(function(doc){ var d = doc.data() || {}; d.__id = doc.id; cloudCache.push(d); });
+    cloudCache = dedupeCloudRecords(cloudCache);
     renderCloudTable();
+  }
+
+  async function clearCloudCollection() {
+    var adb = await ensureFirebaseReady();
+    var snap = await adb.collection(COLLECTION).get();
+    var ids = [];
+    snap.forEach(function(doc){ ids.push(doc.id); });
+    await deleteCloudDocIds(ids);
+    cloudCache = [];
+    renderCloudTable();
+    await adb.collection('limpezas_backup').doc('ultimo_envio').set({
+      total_ativos: 0,
+      total_historico: 0,
+      atualizado_em: new Date().toISOString(),
+      limpeza_total: true
+    }, {merge:true});
+  }
+
+  async function consolidateCloudDuplicates(targetOm, targetStatus) {
+    var adb = await ensureFirebaseReady();
+    var snap = await adb.collection(COLLECTION).get();
+    var docs = [];
+    snap.forEach(function(doc){
+      var d = doc.data() || {};
+      d.__id = doc.id;
+      docs.push(d);
+    });
+
+    var filtered = docs.filter(function(d) {
+      var omOk = !targetOm || text(d.om || '').replace(/\D/g, '') === targetOm;
+      var stOk = !targetStatus || canonicalStatus(d.status || '') === canonicalStatus(targetStatus);
+      return omOk && stOk;
+    });
+
+    var groups = {};
+    filtered.forEach(function(d) {
+      var key = getCloudId(mapCloudToLocal(d));
+      if (!groups[key]) groups[key] = [];
+      groups[key].push(d);
+    });
+
+    var removed = 0;
+    for (var key in groups) {
+      var list = groups[key];
+      if (!list || list.length < 2) continue;
+      list.sort(function(a, b) {
+        var aa = cloudRecordSortValue(a), bb = cloudRecordSortValue(b);
+        if (bb !== aa) return bb - aa;
+        if (!!b.is_archived !== !!a.is_archived) return (!!b.is_archived ? 1 : 0) - (!!a.is_archived ? 1 : 0);
+        return String(b.__id || '').localeCompare(String(a.__id || ''));
+      });
+      var keep = list[0];
+      var keepLocal = mapCloudToLocal(keep);
+      await adb.collection(COLLECTION).doc(getCloudId(keepLocal)).set(
+        Object.assign({}, keep, { doc_key: getCloudId(keepLocal), updated_at: new Date().toISOString() }),
+        { merge: true }
+      );
+      var removeIds = list.slice(1).map(function(x){ return x.__id; }).filter(function(id){ return id && id !== getCloudId(keepLocal); });
+      removed += await deleteCloudDocIds(removeIds);
+    }
+
+    await cloudPull(true);
+    return removed;
   }
 
   function startRealtime() {
@@ -2624,18 +2825,19 @@ try {
 
   on($('btn-cloud-connect'), 'click', function() {
     ensureFirebaseReady().then(function(){ return ensureInitialCollections(); }).then(function(){
-      $('sb-url').value = firebaseConfig.projectId || '';
-      $('sb-key').value = firebaseConfig.appId || '';
+      refreshMaskedCloudFields();
       alert('Firebase conectado.');
     }).catch(function(err){ alert('Erro conectar: ' + (err.message || err)); });
   });
 
   on($('btn-cloud-savekeys'), 'click', function() {
-    alert('O Firebase já está embutido neste HTML. Não é necessário salvar credenciais manualmente.');
+    refreshMaskedCloudFields();
+    alert('As credenciais estão embutidas e ocultas neste HTML.');
   });
 
   on($('btn-cloud-clearkeys'), 'click', function() {
-    alert('As credenciais do Firebase estão fixas no HTML para este projeto.');
+    refreshMaskedCloudFields();
+    alert('Os campos visíveis permanecem mascarados para não expor as credenciais.');
   });
 
   on($('btn-cloud-push'), 'click', function() {
@@ -2658,6 +2860,27 @@ try {
     }).catch(function(err){ alert('Erro ping: ' + (err.message || err)); });
   });
 
+  on($('btn-clear-local-cache'), 'click', function() {
+    if (!confirm('Limpar todo o cache local deste navegador?')) return;
+    clearAppLocalCache().then(function(){
+      alert('Cache local limpo com sucesso.');
+    }).catch(function(err){ alert('Erro ao limpar cache local: ' + (err.message || err)); });
+  });
+
+  on($('btn-cloud-reset'), 'click', function() {
+    var frase = prompt('Digite LIMPAR NUVEM para apagar toda a coleção da nuvem.');
+    if ((frase || '').trim().toUpperCase() !== 'LIMPAR NUVEM') return;
+    clearCloudCollection().then(function(){
+      memCur = [];
+      memHist = [];
+      persistLocal(LS_CUR, memCur);
+      persistLocal(LS_HIS, memHist);
+      renderTable();
+      renderHist();
+      updateCharts();
+      alert('Nuvem limpa com sucesso.');
+    }).catch(function(err){ alert('Erro ao limpar nuvem: ' + (err.message || err)); });
+  });
   function renderCloudTable() {
     var tb = $('tb-cloud');
     if (!tb) return;
@@ -2680,8 +2903,7 @@ try {
 
   // Inicialização
   async function init() {
-    $('sb-url').value = firebaseConfig.projectId || '';
-    $('sb-key').value = firebaseConfig.appId || '';
+    refreshMaskedCloudFields();
     $('auto-archive').checked = loadAuto();
     await hydrateCachesFromIDB();
     renderTable();
