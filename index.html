@@ -1421,15 +1421,81 @@ try {
 
   var memCur = null, memHist = null;
   var db = null, realtimeUnsub = null, cloudCache = [], isPullingFromCloud = false, syncTimer = null;
+  var IDB_NAME = 'limpeza_industrial_cache_v1', IDB_STORE = 'kv';
+  var localQuotaWarned = false;
 
   function safeJsonParse(raw) { try { return JSON.parse(raw || '[]'); } catch (e) { return []; } }
   function loadAll() { return memCur || safeJsonParse(localStorage.getItem(LS_CUR)); }
   function loadHist() { return memHist || safeJsonParse(localStorage.getItem(LS_HIS)); }
+
+  function openAppDB() {
+    return new Promise(function(resolve, reject){
+      if (!window.indexedDB) { resolve(null); return; }
+      var req = indexedDB.open(IDB_NAME, 1);
+      req.onupgradeneeded = function(ev) {
+        var idb = ev.target.result;
+        if (!idb.objectStoreNames.contains(IDB_STORE)) idb.createObjectStore(IDB_STORE);
+      };
+      req.onsuccess = function(){ resolve(req.result); };
+      req.onerror = function(){ reject(req.error || new Error('Falha ao abrir IndexedDB')); };
+    });
+  }
+
+  function idbSetJSON(key, value) {
+    return openAppDB().then(function(idb){
+      if (!idb) return false;
+      return new Promise(function(resolve, reject){
+        var tx = idb.transaction(IDB_STORE, 'readwrite');
+        tx.objectStore(IDB_STORE).put(JSON.stringify(value || []), key);
+        tx.oncomplete = function(){ resolve(true); };
+        tx.onerror = function(){ reject(tx.error || new Error('Falha ao gravar IndexedDB')); };
+      });
+    }).catch(function(err){ console.warn('Falha IndexedDB set', key, err); return false; });
+  }
+
+  function idbGetJSON(key) {
+    return openAppDB().then(function(idb){
+      if (!idb) return [];
+      return new Promise(function(resolve, reject){
+        var tx = idb.transaction(IDB_STORE, 'readonly');
+        var req = tx.objectStore(IDB_STORE).get(key);
+        req.onsuccess = function(){ resolve(safeJsonParse(req.result)); };
+        req.onerror = function(){ reject(req.error || new Error('Falha ao ler IndexedDB')); };
+      });
+    }).catch(function(err){ console.warn('Falha IndexedDB get', key, err); return []; });
+  }
+
   function persistLocal(key, value) {
     var payload = JSON.stringify(value || []);
-    try { localStorage.setItem(key, payload); return true; }
-    catch (e) { console.warn('Falha no localStorage para', key, e); return false; }
+    var ok = true;
+    try { localStorage.setItem(key, payload); }
+    catch (e) {
+      ok = false;
+      console.warn('Falha no localStorage para', key, e);
+      if (!localQuotaWarned) {
+        localQuotaWarned = true;
+        setTimeout(function(){
+          alert('O navegador ficou sem espaço no armazenamento local. O sistema continuará importando e salvará o banco completo em memória/IndexedDB e no Firebase.');
+        }, 50);
+      }
+    }
+    idbSetJSON(key, value);
+    return ok;
   }
+
+  function hydrateCachesFromIDB() {
+    return Promise.all([idbGetJSON(LS_CUR), idbGetJSON(LS_HIS)]).then(function(vals){
+      var curIDB = vals[0] || [], histIDB = vals[1] || [];
+      var curLS = safeJsonParse(localStorage.getItem(LS_CUR));
+      var histLS = safeJsonParse(localStorage.getItem(LS_HIS));
+      memCur = (curIDB && curIDB.length >= curLS.length) ? curIDB : curLS;
+      memHist = (histIDB && histIDB.length >= histLS.length) ? histIDB : histLS;
+    }).catch(function(){
+      memCur = safeJsonParse(localStorage.getItem(LS_CUR));
+      memHist = safeJsonParse(localStorage.getItem(LS_HIS));
+    });
+  }
+
   function queueCloudSync() {
     if (isPullingFromCloud) return;
     clearTimeout(syncTimer);
@@ -1550,10 +1616,16 @@ try {
 
   // Importação de arquivos
   function handleFile(file) {
+    var isCsv = /\.csv$/i.test(file && file.name || '');
     var reader = new FileReader();
     reader.onload = function() {
       try {
-        var workbook = XLSX.read(reader.result, { type: 'array' });
+        var workbook;
+        if (isCsv) {
+          workbook = XLSX.read(String(reader.result || ''), { type: 'string' });
+        } else {
+          workbook = XLSX.read(reader.result, { type: 'array' });
+        }
         var sheetName = workbook.SheetNames[0];
         var worksheet = workbook.Sheets[sheetName];
         var aoa = XLSX.utils.sheet_to_json(worksheet, { header: 1, raw: true, defval: '' });
@@ -1633,7 +1705,7 @@ try {
         alert('Erro processando arquivo: ' + (err.message || err)); 
       }
     };
-    reader.readAsArrayBuffer(file);
+    if (isCsv) reader.readAsText(file, 'utf-8'); else reader.readAsArrayBuffer(file);
   }
 
   // Drop zone
@@ -1721,16 +1793,33 @@ try {
     }
   });
 
+  function dedupeRows(rows) {
+    var seen = Object.create(null), out = [];
+    for (var i = 0; i < (rows || []).length; i++) {
+      var r = rows[i] || {};
+      var key = [norm(r.OM), norm(r.DATA), norm(r.TAG), norm(r['ESPECIFICAÇÃO'])].join('||').toLowerCase();
+      if (!key.replace(/\|/g,'')) { out.push(r); continue; }
+      if (seen[key]) continue;
+      seen[key] = 1;
+      out.push(r);
+    }
+    return out;
+  }
+
   on($('btn-importar'), 'click', function() {
     try {
       if (!parsed || !parsed.length) { alert('Nenhum dado analisado. Selecione arquivo ou cole texto.'); return; }
       var replace = $('replace-mode').checked;
-      var base = replace ? [] : loadAll();
+      var base = replace ? [] : loadAll().slice();
       for (var i = 0; i < parsed.length; i++) base.push(parsed[i]);
+      var before = base.length;
+      base = dedupeRows(base);
       saveAll(base); 
       renderTable(); 
       updateCharts();
-      alert('Importadas ' + parsed.length + ' linhas.');
+      queueCloudSync();
+      var removidas = before - base.length;
+      alert('Importadas ' + parsed.length + ' linhas.' + (removidas > 0 ? ' Duplicatas evitadas: ' + removidas + '.' : ''));
     } catch (err) { 
       alert('Erro no Importar: ' + (err.message || err)); 
     }
@@ -2523,10 +2612,11 @@ try {
 
 
   // Inicialização
-  function init() {
+  async function init() {
     $('sb-url').value = firebaseConfig.projectId || '';
     $('sb-key').value = firebaseConfig.appId || '';
     $('auto-archive').checked = loadAuto();
+    await hydrateCachesFromIDB();
     renderTable();
     renderHist();
     rebuildEquipCheckboxes();
