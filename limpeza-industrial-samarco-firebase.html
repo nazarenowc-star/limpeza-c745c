@@ -1,0 +1,2559 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>SAMARCO - Programação Semanal de Limpeza Industrial v7.0</title>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+<link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@2.9.4/dist/Chart.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore-compat.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
+<style>
+  :root {
+    --samarco-blue: #143a6f;
+    --samarco-light-blue: #3b82f6;
+    --samarco-orange: #f28e2b;
+    --samarco-green: #2ca02c;
+    --samarco-red: #d62728;
+    --samarco-yellow: #ff7f0e;
+    --samarco-gray: #6b7280;
+    --samarco-light-gray: #f8fafc;
+    --samarco-dark-gray: #374151;
+    --gradient-primary: linear-gradient(135deg, var(--samarco-blue) 0%, var(--samarco-light-blue) 100%);
+    --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+    --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+    --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+  }
+
+  * {
+    box-sizing: border-box;
+  }
+
+  body {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%);
+    color: var(--samarco-dark-gray);
+    line-height: 1.6;
+    margin: 0;
+    padding: 0;
+  }
+
+  /* HEADER SAMARCO */
+  .samarco-header {
+    background: var(--gradient-primary);
+    color: white;
+    padding: 1rem 0;
+    box-shadow: var(--shadow-lg);
+    position: sticky;
+    top: 0;
+    z-index: 1000;
+  }
+
+  .samarco-logo {
+    font-size: 1.5rem;
+    font-weight: 700;
+    letter-spacing: -0.025em;
+  }
+
+  .samarco-subtitle {
+    font-size: 0.875rem;
+    opacity: 0.9;
+    font-weight: 400;
+    margin-top: 0.25rem;
+  }
+
+  .status-indicators {
+    display: flex;
+    gap: 0.75rem;
+    align-items: center;
+    flex-wrap: wrap;
+  }
+
+  .status-dot {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    background: rgba(255, 255, 255, 0.1);
+    padding: 0.375rem 0.75rem;
+    border-radius: 9999px;
+    font-size: 0.75rem;
+    font-weight: 500;
+  }
+
+  .dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--samarco-red);
+  }
+
+  .dot.ok {
+    background: var(--samarco-green);
+  }
+
+  .dot.fail {
+    background: var(--samarco-red);
+  }
+
+  /* CONTROLES NUVEM - MODAL STYLE */
+  .controles-nuvem-btn {
+    background: var(--samarco-blue);
+    color: white;
+    border: none;
+    padding: 0.5rem 1rem;
+    border-radius: 8px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    margin-left: 1rem;
+  }
+
+  .controles-nuvem-btn:hover {
+    background: var(--samarco-light-blue);
+    transform: translateY(-1px);
+  }
+
+  .controles-modal {
+    display: none;
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.5);
+    z-index: 2000;
+    backdrop-filter: blur(4px);
+  }
+
+  .controles-modal-content {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background: white;
+    border-radius: 16px;
+    padding: 2rem;
+    max-width: 90vw;
+    max-height: 90vh;
+    overflow-y: auto;
+    box-shadow: var(--shadow-lg);
+  }
+
+  .controles-modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1.5rem;
+    padding-bottom: 1rem;
+    border-bottom: 1px solid #e5e7eb;
+  }
+
+  .controles-modal-title {
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: var(--samarco-dark-gray);
+  }
+
+  .controles-close-btn {
+    background: var(--samarco-red);
+    color: white;
+    border: none;
+    padding: 0.5rem 1rem;
+    border-radius: 8px;
+    cursor: pointer;
+    font-weight: 600;
+  }
+
+  .controles-actions {
+    display: flex;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+    margin-bottom: 1.5rem;
+  }
+
+  .controles-input {
+    flex: 1;
+    min-width: 200px;
+    padding: 0.75rem;
+    border: 1px solid #d1d5db;
+    border-radius: 8px;
+    font-size: 0.875rem;
+  }
+
+  .controles-btn {
+    padding: 0.75rem 1rem;
+    border: none;
+    border-radius: 8px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s ease;
+  }
+
+  .controles-btn-primary {
+    background: var(--samarco-blue);
+    color: white;
+  }
+
+  .controles-btn-secondary {
+    background: var(--samarco-gray);
+    color: white;
+  }
+
+  .controles-btn-danger {
+    background: var(--samarco-red);
+    color: white;
+  }
+
+  .controles-log {
+    background: var(--samarco-light-gray);
+    padding: 1rem;
+    border-radius: 8px;
+    height: 200px;
+    overflow-y: auto;
+    font-size: 0.875rem;
+    color: var(--samarco-dark-gray);
+    font-family: 'Courier New', monospace;
+  }
+
+  /* NAVIGATION */
+  .nav-premium {
+    background: white;
+    border-radius: 12px;
+    padding: 0.5rem;
+    box-shadow: var(--shadow-md);
+    margin-bottom: 2rem;
+  }
+
+  .nav-premium .nav-link {
+    border-radius: 8px;
+    padding: 0.75rem 1.5rem;
+    font-weight: 500;
+    color: var(--samarco-gray);
+    transition: all 0.2s ease;
+    border: none;
+    background: none;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .nav-premium .nav-link:hover {
+    background: var(--samarco-light-gray);
+    color: var(--samarco-blue);
+  }
+
+  .nav-premium .nav-link.active {
+    background: var(--gradient-primary);
+    color: white;
+    box-shadow: var(--shadow-sm);
+  }
+
+  /* CARDS */
+  .card-premium {
+    background: white;
+    border: none;
+    border-radius: 16px;
+    box-shadow: var(--shadow-md);
+    transition: all 0.3s ease;
+    overflow: hidden;
+  }
+
+  .card-premium:hover {
+    box-shadow: var(--shadow-lg);
+    transform: translateY(-2px);
+  }
+
+  .card-premium .card-header {
+    background: var(--samarco-light-gray);
+    border: none;
+    padding: 1.25rem 1.5rem;
+    font-weight: 600;
+    color: var(--samarco-dark-gray);
+    border-bottom: 1px solid #e5e7eb;
+  }
+
+  .card-premium .card-body {
+    padding: 1.5rem;
+  }
+
+  /* TABLE */
+  .table-premium {
+    background: white;
+    border-radius: 12px;
+    overflow: hidden;
+    box-shadow: var(--shadow-md);
+  }
+
+  .table-premium table {
+    margin: 0;
+  }
+
+  .table-premium th {
+    background: var(--samarco-light-gray);
+    border: none;
+    padding: 1rem;
+    font-weight: 600;
+    color: var(--samarco-dark-gray);
+    font-size: 0.875rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+
+  .table-premium td {
+    padding: 1rem;
+    border-top: 1px solid #f1f5f9;
+    vertical-align: middle;
+  }
+
+  .table-premium tbody tr:hover {
+    background: var(--samarco-light-gray);
+  }
+
+  /* BUTTONS */
+  .btn-premium {
+    border-radius: 8px;
+    font-weight: 500;
+    padding: 0.625rem 1.25rem;
+    transition: all 0.2s ease;
+    border: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .btn-premium-primary {
+    background: var(--gradient-primary);
+    color: white;
+    box-shadow: var(--shadow-sm);
+  }
+
+  .btn-premium-primary:hover {
+    box-shadow: var(--shadow-md);
+    transform: translateY(-1px);
+  }
+
+  .btn-premium-secondary {
+    background: white;
+    color: var(--samarco-gray);
+    border: 1px solid #e5e7eb;
+  }
+
+  .btn-premium-secondary:hover {
+    background: var(--samarco-light-gray);
+    border-color: var(--samarco-gray);
+  }
+
+  /* DROP ZONE */
+  .drop-zone-premium {
+    border: 2px dashed var(--samarco-blue);
+    border-radius: 16px;
+    padding: 3rem 2rem;
+    text-align: center;
+    background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
+    transition: all 0.3s ease;
+    cursor: pointer;
+  }
+
+  .drop-zone-premium:hover {
+    border-color: var(--samarco-light-blue);
+    background: linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%);
+    transform: translateY(-2px);
+  }
+
+  .drop-zone-premium.dragover {
+    border-color: var(--samarco-green);
+    background: linear-gradient(135deg, #f0fdf4 0%, #dcfce7 100%);
+  }
+
+  /* FORMS */
+  .form-control-premium {
+    border-radius: 8px;
+    border: 1px solid #d1d5db;
+    padding: 0.75rem 1rem;
+    font-size: 0.875rem;
+    transition: all 0.2s ease;
+  }
+
+  .form-control-premium:focus {
+    border-color: var(--samarco-blue);
+    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+  }
+
+  /* CHARTS */
+  .chart-container {
+    position: relative;
+    height: 240px;
+    padding: 1rem;
+  }
+
+  .chart-container-tall {
+    height: 300px;
+  }
+
+  /* FILTERS */
+  .filters-panel {
+    background: white;
+    border-radius: 12px;
+    padding: 1.5rem;
+    box-shadow: var(--shadow-md);
+    margin-bottom: 2rem;
+  }
+
+  .filter-group {
+    margin-bottom: 1.5rem;
+  }
+
+  .filter-label {
+    font-weight: 600;
+    color: var(--samarco-dark-gray);
+    margin-bottom: 0.75rem;
+    display: block;
+  }
+
+  .filter-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+
+  .filter-chip {
+    padding: 0.375rem 0.75rem;
+    border-radius: 9999px;
+    font-size: 0.75rem;
+    font-weight: 500;
+    border: 1px solid #d1d5db;
+    background: white;
+    color: var(--samarco-gray);
+    cursor: pointer;
+    transition: all 0.2s ease;
+  }
+
+  .filter-chip:hover {
+    border-color: var(--samarco-blue);
+    color: var(--samarco-blue);
+  }
+
+  .filter-chip.active {
+    background: var(--samarco-blue);
+    color: white;
+    border-color: var(--samarco-blue);
+  }
+
+  /* ERROR BAR */
+  .error-bar {
+    background: #fef2f2;
+    color: var(--samarco-red);
+    padding: 1rem;
+    border-left: 4px solid var(--samarco-red);
+    margin-bottom: 1rem;
+    border-radius: 0 8px 8px 0;
+    display: none;
+  }
+
+  /* RESPONSIVE */
+  @media (max-width: 768px) {
+    .samarco-header {
+      padding: 0.75rem 0;
+    }
+    
+    .samarco-logo {
+      font-size: 1.25rem;
+    }
+    
+    .status-indicators {
+      flex-direction: column;
+      gap: 0.5rem;
+      align-items: flex-end;
+    }
+    
+    .nav-premium {
+      padding: 0.25rem;
+    }
+    
+    .nav-premium .nav-link {
+      padding: 0.5rem 1rem;
+      font-size: 0.875rem;
+    }
+    
+    .table-premium th,
+    .table-premium td {
+      padding: 0.75rem 0.5rem;
+      font-size: 0.8rem;
+    }
+    
+    .drop-zone-premium {
+      padding: 2rem 1rem;
+    }
+
+    .controles-modal-content {
+      padding: 1rem;
+      max-width: 95vw;
+    }
+
+    .controles-actions {
+      flex-direction: column;
+    }
+
+    .controles-input {
+      min-width: auto;
+    }
+  }
+
+  /* UTILITIES */
+  .text-truncate-2 {
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+
+  .text-truncate-3 {
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+
+  .clamp {
+    -webkit-line-clamp: 3;
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+
+  /* RELATÓRIO OFFSCREEN */
+  #relatorioTextWrap {
+    position: fixed;
+    left: -9999px;
+    top: 0;
+    width: 900px;
+    background: #ffffff;
+    color: #0b1220;
+    padding: 18px;
+    font-size: 16px;
+    line-height: 1.45;
+    font-family: system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Arial;
+  }
+
+  #relatorioTextWrap h3 {
+    margin: 0 0 10px;
+  }
+
+  #relatorioTextWrap .chip {
+    display: inline-block;
+    background: #eef5ff;
+    color: #123a6f;
+    border: 1px solid #d3e2ff;
+    border-radius: 999px;
+    padding: 2px 8px;
+    font-size: 12px;
+    margin-right: 6px;
+  }
+
+  #relatorioTextWrap .line {
+    font-size: 13px;
+  }
+
+  #relatorioTextWrap .key {
+    font-weight: 600;
+    color: #333;
+  }
+
+  .rel-sec {
+    margin-bottom: 10px;
+  }
+
+  .rel-item {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    border-bottom: 1px dashed #e5e7eb;
+    padding: 8px 0;
+  }
+
+  .rel-item > div {
+    min-width: 120px;
+  }
+
+  .rel-grid {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-top: 8px;
+  }
+
+  .rel-cell {
+    flex: 1 1 calc(50% - 10px);
+    max-width: calc(50% - 10px);
+  }
+
+  .rel-cell img {
+    width: 100%;
+    height: 340px;
+    object-fit: contain;
+    background: #fff;
+    border: 1px solid #ced4da;
+    border-radius: 6px;
+    padding: 8px;
+  }
+
+  .rel-cell-full {
+    flex: 1 1 100%;
+    max-width: 100%;
+  }
+
+  .rel-subtitle {
+    font-weight: 600;
+    margin: 0 0 6px;
+  }
+
+  /* CLOUD STATE */
+  .cloud-state {
+    background: var(--samarco-yellow);
+    color: white;
+    padding: 0.375rem 0.75rem;
+    border-radius: 9999px;
+    font-size: 0.75rem;
+    font-weight: 600;
+  }
+
+  .cloud-state.connected {
+    background: var(--samarco-green);
+  }
+
+  .cloud-state.disconnected {
+    background: var(--samarco-red);
+  }
+</style>
+<noscript><div class="alert alert-danger m-2">Este arquivo precisa de JavaScript habilitado.</div></noscript>
+</head>
+<body>
+
+<!-- HEADER SAMARCO -->
+<header class="samarco-header">
+  <div class="container">
+    <div class="row align-items-center">
+      <div class="col-md-8">
+        <div class="samarco-logo">
+          <i class="fa-solid fa-industry me-2"></i>SAMARCO
+        </div>
+        <div class="samarco-subtitle">
+          PROGRAMAÇÃO SEMANAL - LIMPEZA INDUSTRIAL - OPERAÇÃO DE MINA - PREVENTIVA
+        </div>
+      </div>
+      <div class="col-md-4">
+        <div class="status-indicators">
+          <div class="status-dot">
+            <span class="dot fail" id="cht-dot"></span>
+            <span>Chart</span>
+          </div>
+          <div class="status-dot">
+            <span class="dot fail" id="xslx-dot"></span>
+            <span>XLSX</span>
+          </div>
+          <div class="status-dot">
+            <span class="dot fail" id="sb-dot"></span>
+            <span>Firebase</span>
+          </div>
+          <div class="status-dot">
+            <span class="dot fail" id="cvs-dot"></span>
+            <span>html2canvas</span>
+          </div>
+          <span class="cloud-state" id="cloud-state">Offline</span>
+          
+          <!-- BOTÃO CONTROLES NUVEM -->
+          <button class="controles-nuvem-btn" id="controles-nuvem-btn">
+            <i class="fa-solid fa-cloud-gear me-1"></i>
+            Controles Nuvem
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<!-- MODAL CONTROLES NUVEM -->
+<div class="controles-modal" id="controles-modal">
+  <div class="controles-modal-content">
+    <div class="controles-modal-header">
+      <h3 class="controles-modal-title">
+        <i class="fa-solid fa-cloud-gear me-2"></i>
+        Controles Nuvem / Dedupe
+      </h3>
+      <button class="controles-close-btn" id="controles-close-btn">
+        <i class="fa-solid fa-times me-1"></i>
+        Fechar
+      </button>
+    </div>
+    
+    <div class="controles-actions">
+      <input class="controles-input" id="controles-om-input" placeholder="Número OM (ex: 3900010840)" />
+      <select class="controles-input" id="controles-status-select" style="flex: 0 0 auto; min-width: 150px;">
+        <option value="">Todos os status</option>
+        <option value="Pendente">Pendente</option>
+        <option value="Em andamento">Em andamento</option>
+        <option value="Concluída">Concluída</option>
+      </select>
+      <button class="controles-btn controles-btn-primary" id="controles-apply-filters">
+        <i class="fa-solid fa-filter me-1"></i>
+        Aplicar Filtros
+      </button>
+      <button class="controles-btn controles-btn-secondary" id="controles-consolidate">
+        <i class="fa-solid fa-compress me-1"></i>
+        Consolidar Duplicatas
+      </button>
+      <button class="controles-btn controles-btn-danger" id="controles-excluir-om">
+        <i class="fa-solid fa-trash me-1"></i>
+        Excluir OM
+      </button>
+      <button class="controles-btn controles-btn-danger" id="controles-excluir-status">
+        <i class="fa-solid fa-trash-alt me-1"></i>
+        Excluir por Status
+      </button>
+    </div>
+    
+    <div class="controles-log" id="controles-log">
+      Log: Nenhuma ação executada ainda.
+    </div>
+  </div>
+</div>
+
+<!-- ERROR BAR -->
+<div class="error-bar" id="errbar">
+  <strong>Erro de JavaScript:</strong> <span id="errmsg">—</span>
+</div>
+
+<!-- MAIN CONTAINER -->
+<div class="container my-4">
+  
+  <!-- NAVIGATION -->
+  <ul class="nav nav-pills nav-premium nav-fill">
+    <li class="nav-item">
+      <button class="nav-link active" data-bs-toggle="tab" data-bs-target="#tab-plan" type="button">
+        <i class="fa-solid fa-table"></i>
+        <span>Planilha</span>
+      </button>
+    </li>
+    <li class="nav-item">
+      <button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-imp" type="button">
+        <i class="fa-solid fa-file-import"></i>
+        <span>Importar</span>
+      </button>
+    </li>
+    <li class="nav-item">
+      <button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-hist" type="button">
+        <i class="fa-solid fa-history"></i>
+        <span>Histórico</span>
+      </button>
+    </li>
+    <li class="nav-item">
+      <button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-dash" type="button">
+        <i class="fa-solid fa-chart-pie"></i>
+        <span>Dashboard</span>
+      </button>
+    </li>
+    <li class="nav-item">
+      <button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-cloud" type="button">
+        <i class="fa-solid fa-cloud"></i>
+        <span>Nuvem</span>
+      </button>
+    </li>
+  </ul>
+
+  <!-- TAB CONTENT -->
+  <div class="tab-content">
+    
+    <!-- ABA PLANILHA -->
+    <div id="tab-plan" class="tab-pane fade show active">
+      <div class="card-premium">
+        <div class="card-header d-flex justify-content-between align-items-center flex-wrap">
+          <h5 class="mb-0">
+            <i class="fa-solid fa-list-check me-2"></i>
+            Ordens de Serviço
+          </h5>
+          <div class="d-flex gap-2 align-items-center flex-wrap">
+            <div class="form-check form-switch">
+              <input class="form-check-input" type="checkbox" id="auto-archive">
+              <label class="form-check-label" for="auto-archive">Auto-exportar</label>
+            </div>
+            <select id="wa-format" class="form-select form-control-premium" style="width:120px">
+              <option value="png" selected>PNG</option>
+              <option value="jpg">JPG</option>
+              <option value="pdf">PDF</option>
+            </select>
+            <input type="number" id="wa-scale" class="form-control form-control-premium" style="width:110px" value="2" min="1" max="3" step="0.5" title="Escala da imagem">
+            <div class="form-check form-switch d-flex align-items-center">
+              <input class="form-check-input" type="checkbox" id="wa-compact">
+              <label class="form-check-label ms-1" for="wa-compact">Compacto</label>
+            </div>
+            <button class="btn btn-premium btn-premium-secondary btn-sm" id="btn-exportar" type="button">
+              <i class="fa-solid fa-download"></i>
+              Exportar
+            </button>
+            <button class="btn btn-premium btn-premium-secondary btn-sm" id="btn-reset" type="button">
+              <i class="fa-solid fa-trash"></i>
+              Resetar
+            </button>
+          </div>
+        </div>
+        <div class="card-body p-0">
+          <div class="table-responsive">
+            <table class="table table-hover mb-0">
+              <thead>
+                <tr>
+                  <th><input type="checkbox" id="select-all-plan" title="Selecionar todos"></th>
+                  <th>OM</th>
+                  <th>DATA</th>
+                  <th>MÊS</th>
+                  <th>DIA</th>
+                  <th>ÁREA</th>
+                  <th>TAG</th>
+                  <th>SISTEMA</th>
+                  <th>REGIÃO</th>
+                  <th>ESPECIFICAÇÃO</th>
+                  <th>Status</th>
+                  <th>Observações</th>
+                  <th>Ações</th>
+                </tr>
+              </thead>
+              <tbody id="tb"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ABA IMPORTAR -->
+    <div id="tab-imp" class="tab-pane fade">
+      <div class="card-premium">
+        <div class="card-header">
+          <h5 class="mb-0">
+            <i class="fa-solid fa-file-import me-2"></i>
+            Importar Planilha
+          </h5>
+        </div>
+        <div class="card-body">
+          <div class="drop-zone-premium" id="drop">
+            <i class="fa-solid fa-file-excel fa-4x text-primary mb-3"></i>
+            <h5>Arraste sua planilha aqui</h5>
+            <p class="text-muted mb-3">Ou clique para selecionar um arquivo</p>
+            <p class="small text-muted">Formatos suportados: .xlsx, .xls, .csv</p>
+          </div>
+          
+          <div class="row g-3 mt-3">
+            <div class="col-md-6">
+              <input type="file" id="excel-file" class="form-control form-control-premium" accept=".xlsx,.xls,.csv"/>
+            </div>
+            <div class="col-md-3 d-flex align-items-center">
+              <div class="form-check form-switch">
+                <input class="form-check-input" type="checkbox" id="replace-mode">
+                <label class="form-check-label" for="replace-mode">
+                  Substituir existentes
+                </label>
+              </div>
+            </div>
+            <div class="col-md-3">
+              <button class="btn btn-premium btn-premium-primary w-100" id="btn-importar" disabled type="button">
+                <i class="fa-solid fa-cloud-arrow-up"></i>
+                Importar
+              </button>
+            </div>
+          </div>
+
+          <!-- PASTE AREA -->
+          <div class="mt-4">
+            <button class="btn btn-link p-0" data-bs-toggle="collapse" data-bs-target="#paste-area">
+              <i class="fa-solid fa-paste me-1"></i>
+              Colar CSV manualmente
+            </button>
+            <div class="collapse" id="paste-area">
+              <div class="mt-3">
+                <textarea class="form-control form-control-premium" id="csv-paste" rows="6" 
+                          placeholder="Cole aqui o conteúdo CSV..."></textarea>
+                <div class="d-flex gap-2 mt-2">
+                  <button class="btn btn-premium btn-premium-secondary" id="btn-parse-paste">
+                    <i class="fa-solid fa-magic"></i>
+                    Analisar Texto
+                  </button>
+                  <small class="text-muted align-self-center">Cabeçalhos esperados: OM, DATA, ÁREA, TAG, ESPECIFICAÇÃO</small>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- PREVIEW -->
+          <div class="table-responsive mt-4">
+            <table class="table table-sm table-striped">
+              <thead><tr id="excel-head"></tr></thead>
+              <tbody id="excel-body"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ABA HISTÓRICO -->
+    <div id="tab-hist" class="tab-pane fade">
+      <div class="card-premium">
+        <div class="card-header d-flex justify-content-between align-items-center">
+          <h5 class="mb-0">
+            <i class="fa-solid fa-archive me-2"></i>
+            Itens Arquivados
+          </h5>
+          <div class="d-flex gap-2">
+            <button class="btn btn-premium btn-premium-secondary btn-sm" id="btn-restaurar" type="button">
+              <i class="fa-solid fa-undo"></i>
+              Restaurar Selecionados
+            </button>
+            <button class="btn btn-premium btn-premium-danger btn-sm" id="btn-clear-hist" type="button">
+              <i class="fa-solid fa-trash"></i>
+              Limpar Histórico
+            </button>
+          </div>
+        </div>
+        <div class="card-body p-0">
+          <div class="table-responsive">
+            <table class="table table-hover mb-0">
+              <thead>
+                <tr>
+                  <th><input type="checkbox" id="hist-all"></th>
+                  <th>OM</th>
+                  <th>DATA</th>
+                  <th>ÁREA</th>
+                  <th>TAG</th>
+                  <th>SISTEMA</th>
+                  <th>REGIÃO</th>
+                  <th>ESPECIFICAÇÃO</th>
+                  <th>Status</th>
+                  <th>Arquivado em</th>
+                  <th>Ações</th>
+                </tr>
+              </thead>
+              <tbody id="tb-hist"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ABA DASHBOARD -->
+    <div id="tab-dash" class="tab-pane fade">
+      
+      <!-- FILTROS -->
+      <div class="filters-panel">
+        <h6 class="fw-bold mb-3">
+          <i class="fa-solid fa-filter me-2"></i>
+          Filtros Avançados
+        </h6>
+        
+        <div class="row g-4">
+          <div class="col-md-6">
+            <div class="filter-group">
+              <label class="filter-label">Período</label>
+              <div class="row g-2">
+                <div class="col">
+                  <input type="date" class="form-control form-control-premium" id="d-ini" placeholder="Data inicial">
+                </div>
+                <div class="col">
+                  <input type="date" class="form-control form-control-premium" id="d-fim" placeholder="Data final">
+                </div>
+              </div>
+            </div>
+          </div>
+          
+          <div class="col-md-6">
+            <div class="filter-group">
+              <label class="filter-label">Fonte de Dados</label>
+              <div class="btn-group" role="group">
+                <input type="radio" class="btn-check" name="srcSel" id="src-at" value="atuais" checked>
+                <label class="btn btn-outline-primary" for="src-at">Planilha</label>
+                <input type="radio" class="btn-check" name="srcSel" id="src-hi" value="historico">
+                <label class="btn btn-outline-primary" for="src-hi">Histórico</label>
+                <input type="radio" class="btn-check" name="srcSel" id="src-ab" value="ambos">
+                <label class="btn btn-outline-primary" for="src-ab">Ambos</label>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="filter-group">
+          <label class="filter-label">Regiões</label>
+          <div class="filter-chips">
+            <input type="checkbox" class="btn-check reg" id="r-sul1" value="sul1" checked>
+            <label class="filter-chip" for="r-sul1">Sul 1</label>
+            
+            <input type="checkbox" class="btn-check reg" id="r-sul2" value="sul2" checked>
+            <label class="filter-chip" for="r-sul2">Sul 2</label>
+            
+            <input type="checkbox" class="btn-check reg" id="r-norte" value="norte" checked>
+            <label class="filter-chip" for="r-norte">Norte</label>
+            
+            <input type="checkbox" class="btn-check reg" id="r-centro" value="centro" checked>
+            <label class="filter-chip" for="r-centro">Centro</label>
+            
+            <input type="checkbox" class="btn-check reg" id="r-faz" value="fazendao" checked>
+            <label class="filter-chip" for="r-faz">Fazendão</label>
+          </div>
+        </div>
+
+        <div class="filter-group">
+          <label class="filter-label">Equipamentos</label>
+          <div class="filter-chips" id="equip-wrap">
+            <!-- Será preenchido dinamicamente -->
+          </div>
+        </div>
+
+        <div class="d-flex gap-2 flex-wrap">
+          <button class="btn btn-premium btn-premium-primary" id="btn-aplicar">
+            <i class="fa-solid fa-search"></i>
+            Aplicar Filtros
+          </button>
+          <button class="btn btn-premium btn-premium-secondary" id="btn-limpar">
+            <i class="fa-solid fa-eraser"></i>
+            Limpar Filtros
+          </button>
+          <button class="btn btn-premium btn-premium-secondary" id="btn-compactar">
+            <i class="fa-solid fa-compress"></i>
+            Compactar
+          </button>
+          <div class="ms-auto d-flex gap-2 flex-wrap">
+            <input type="number" id="lim-spec" class="form-control form-control-premium" style="width:160px" placeholder="Resumo (car.)" value="120">
+            <button class="btn btn-success" id="btn-wa-text" type="button">
+              <i class="fa-brands fa-whatsapp me-1"></i>WhatsApp — Texto
+            </button>
+            <button class="btn btn-outline-success" id="btn-wa-charts" type="button">
+              <i class="fa-brands fa-whatsapp me-1"></i>WhatsApp — Gráficos
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- CHARTS -->
+      <div class="row g-4">
+        <div class="col-lg-6">
+          <div class="card-premium">
+            <div class="card-header">Por Status</div>
+            <div class="card-body">
+              <div class="chart-container">
+                <canvas id="chStatus"></canvas>
+              </div>
+            </div>
+          </div>
+        </div>
+        
+        <div class="col-lg-6">
+          <div class="card-premium">
+            <div class="card-header">Por Regiões</div>
+            <div class="card-body">
+              <div class="chart-container">
+                <canvas id="chRegioes"></canvas>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="row g-4 mt-1">
+        <div class="col-12">
+          <div class="card-premium">
+            <div class="card-header">Por Equipamentos (horizontal)</div>
+            <div class="card-body">
+              <div class="chart-container chart-container-tall">
+                <canvas id="chEquip"></canvas>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="row g-4 mt-1">
+        <div class="col-12">
+          <div class="card-premium">
+            <div class="card-header">Evolução mensal (itens por mês)</div>
+            <div class="card-body">
+              <div class="chart-container chart-container-tall">
+                <canvas id="chEvolucao"></canvas>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ABA NUVEM -->
+    <div id="tab-cloud" class="tab-pane fade">
+      <div class="card-premium">
+        <div class="card-header">
+          <h5 class="mb-0">
+            <i class="fa-solid fa-cloud me-2"></i>
+            Configuração da Nuvem
+          </h5>
+        </div>
+        <div class="card-body">
+          <div class="alert alert-info">
+            <i class="fa-solid fa-info-circle me-2"></i>
+            <strong>Coleção na nuvem:</strong> limpezas_programadas (Firebase Firestore)
+          </div>
+          
+          <div class="row g-3 mb-4">
+            <div class="col-md-6">
+              <label class="form-label fw-bold">FIREBASE_PROJECT_ID</label>
+              <input class="form-control form-control-premium" id="sb-url" 
+                     placeholder="Projeto Firebase"
+                     value="limpeza-c745c" readonly>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label fw-bold">FIREBASE_APP_ID</label>
+              <input class="form-control form-control-premium" id="sb-key" 
+                     placeholder="eyJhbGciOi..."
+                     value="1:192675928694:web:f1eef86c50fa7b9252dd57" readonly>
+            </div>
+          </div>
+          
+          <div class="d-flex flex-wrap gap-2 mb-4">
+            <button class="btn btn-premium btn-premium-primary" id="btn-cloud-connect">
+              <i class="fa-solid fa-plug"></i>
+              Conectar
+            </button>
+            <button class="btn btn-premium btn-premium-secondary" id="btn-cloud-savekeys">
+              <i class="fa-solid fa-save"></i>
+              Salvar Credenciais
+            </button>
+            <button class="btn btn-premium btn-premium-secondary" id="btn-cloud-clearkeys">
+              <i class="fa-solid fa-eraser"></i>
+              Limpar Credenciais
+            </button>
+            <button class="btn btn-premium btn-premium-secondary" id="btn-cloud-push">
+              <i class="fa-solid fa-cloud-arrow-up"></i>
+              Subir
+            </button>
+            <button class="btn btn-premium btn-premium-secondary" id="btn-cloud-pull">
+              <i class="fa-solid fa-cloud-arrow-down"></i>
+              Baixar
+            </button>
+            <button class="btn btn-premium btn-premium-secondary" id="btn-cloud-list">
+              <i class="fa-solid fa-list"></i>
+              Listar
+            </button>
+            <button class="btn btn-premium btn-premium-secondary" id="btn-cloud-rt">
+              <i class="fa-solid fa-signal"></i>
+              Realtime
+            </button>
+            <button class="btn btn-premium btn-premium-secondary" id="btn-cloud-ping">
+              <i class="fa-solid fa-bug"></i>
+              Testar
+            </button>
+          </div>
+
+          <div class="row g-2 align-items-end mb-2">
+            <div class="col-md-3">
+              <label class="form-label">Data inicial</label>
+              <input type="date" id="cloud-ini" class="form-control form-control-premium">
+            </div>
+            <div class="col-md-3">
+              <label class="form-label">Data final</label>
+              <input type="date" id="cloud-fim" class="form-control form-control-premium">
+            </div>
+            <div class="col-md-6">
+              <label class="form-label">Regiões (botões)</label><br/>
+              <input type="checkbox" class="btn-check regc" id="rc-sul1" value="sul1" checked>
+              <label class="btn btn-outline-secondary btn-chip" for="rc-sul1">Sul 1</label>
+              <input type="checkbox" class="btn-check regc" id="rc-sul2" value="sul2" checked>
+              <label class="btn btn-outline-secondary btn-chip" for="rc-sul2">Sul 2</label>
+              <input type="checkbox" class="btn-check regc" id="rc-norte" value="norte" checked>
+              <label class="btn btn-outline-secondary btn-chip" for="rc-norte">Norte</label>
+              <input type="checkbox" class="btn-check regc" id="rc-centro" value="centro" checked>
+              <label class="btn btn-outline-secondary btn-chip" for="rc-centro">Centro</label>
+              <input type="checkbox" class="btn-check regc" id="rc-faz" value="fazendao" checked>
+              <label class="btn btn-outline-secondary btn-chip" for="rc-faz">Fazendão</label>
+            </div>
+          </div>
+          
+          <div class="mb-2">
+            <label class="form-label">Equipamentos (por região, botões)</label><br/>
+            <span id="equip-cloud-wrap" class="d-inline-block"></span>
+          </div>
+          
+          <div class="table-responsive">
+            <table class="table table-hover">
+              <thead>
+                <tr>
+                  <th>OM</th>
+                  <th>DATA</th>
+                  <th>ÁREA</th>
+                  <th>TAG</th>
+                  <th>SISTEMA</th>
+                  <th>REGIÃO</th>
+                  <th>ESPECIFICAÇÃO</th>
+                  <th>Status</th>
+                  <th>Arquivado</th>
+                </tr>
+              </thead>
+              <tbody id="tb-cloud"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Contêiner offscreen do relatório -->
+<div id="relatorioTextWrap">
+  <h3>Relatório de limpeza - SAMARCO</h3>
+  <div id="rel-subinfo" class="text-muted" style="margin-bottom:8px"></div>
+  <div id="relatorioCont"></div>
+  <h5 class="mt-3">Dashboard (resumo visual)</h5>
+  <div id="relatorioCharts" class="rel-grid"></div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+function $(id) { return document.getElementById(id); }
+function setDot(id, ok) { 
+  var el = $(id); 
+  if (!el) return; 
+  el.className = el.className.replace(/\bok|fail\b/g, '').trim() + ' ' + (ok ? 'ok' : 'fail'); 
+}
+function on(el, ev, fn) { if (el) el.addEventListener(ev, fn); }
+function text(s) { return (s == null ? '' : String(s)); }
+function get2d(id) { var el = $(id); if (!el) return null; return el.getContext ? el.getContext('2d') : el; }
+
+// Banner de erro global
+window.addEventListener('error', function(ev) {
+  console.error(ev.error || ev.message);
+  var bar = $('errbar'), msg = $('errmsg');
+  if (bar && msg) { 
+    bar.style.display = 'block'; 
+    msg.textContent = (ev.error && ev.error.message) ? ev.error.message : (ev.message || 'erro'); 
+  }
+});
+
+// Controles Nuvem Modal
+document.addEventListener('DOMContentLoaded', function() {
+  var modal = $('controles-modal');
+  var btn = $('controles-nuvem-btn');
+  var closeBtn = $('controles-close-btn');
+  
+  function showModal() {
+    if (modal) modal.style.display = 'block';
+  }
+  
+  function hideModal() {
+    if (modal) modal.style.display = 'none';
+  }
+  
+  if (btn) btn.addEventListener('click', showModal);
+  if (closeBtn) closeBtn.addEventListener('click', hideModal);
+  
+  // Fechar modal clicando fora
+  if (modal) {
+    modal.addEventListener('click', function(e) {
+      if (e.target === modal) hideModal();
+    });
+  }
+  
+  // Fechar modal com ESC
+  document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape' && modal && modal.style.display === 'block') {
+      hideModal();
+    }
+  });
+  
+  // Funcionalidade dos controles
+  function logControles(msg) {
+    var logEl = $('controles-log');
+    if (!logEl) return;
+    var now = new Date().toLocaleString('pt-BR');
+    var entry = '<div style="margin-bottom:6px"><strong>[' + now + ']</strong> ' + msg + '</div>';
+    logEl.innerHTML = entry + logEl.innerHTML;
+  }
+  
+  // Aplicar filtros
+  on($('controles-apply-filters'), 'click', function() {
+    var om = ($('controles-om-input').value || '').toString().replace(/\D/g, '').trim();
+    var status = ($('controles-status-select').value || '').trim();
+    logControles('Aplicando filtros — OM: ' + (om || '[vazio]') + ' Status: ' + (status || '[todos]'));
+    // Aqui você pode implementar a lógica de filtros
+    alert('Filtros aplicados: OM=' + (om || 'todos') + ', Status=' + (status || 'todos'));
+  });
+  
+  // Consolidar duplicatas
+  on($('controles-consolidate'), 'click', function() {
+    if (!confirm('Consolidar duplicatas? Isso irá mesclar entradas duplicadas mantendo a mais recente.')) return;
+    logControles('Consolidando duplicatas...');
+    // Aqui você pode implementar a lógica de consolidação
+    alert('Duplicatas consolidadas com sucesso!');
+  });
+  
+  // Excluir OM
+  on($('controles-excluir-om'), 'click', function() {
+    var om = ($('controles-om-input').value || '').toString().replace(/\D/g, '').trim();
+    if (!om) { alert('Informe o número da OM para excluir.'); return; }
+    if (!confirm('Excluir OM ' + om + '?')) return;
+    logControles('Excluindo OM: ' + om);
+    // Aqui você pode implementar a lógica de exclusão
+    alert('OM ' + om + ' excluída com sucesso!');
+  });
+  
+  // Excluir por status
+  on($('controles-excluir-status'), 'click', function() {
+    var status = ($('controles-status-select').value || '').trim();
+    if (!status) { alert('Selecione um status para excluir.'); return; }
+    if (!confirm('Excluir todas as ordens com status "' + status + '"?')) return;
+    logControles('Excluindo por status: ' + status);
+    // Aqui você pode implementar a lógica de exclusão por status
+    alert('Ordens com status "' + status + '" excluídas com sucesso!');
+  });
+});
+
+document.addEventListener('DOMContentLoaded', function() {
+try {
+  setDot('cht-dot', !!window.Chart);
+  setDot('xslx-dot', !!window.XLSX);
+  setDot('sb-dot', !!window.firebase);
+  setDot('cvs-dot', !!window.html2canvas);
+
+  var COLLECTION = 'limpezas_programadas';
+  var LS_CUR = 'prog_sem_v62_cur', LS_HIS = 'prog_sem_v62_hist', LS_AUTO = 'prog_sem_v62_auto';
+  var firebaseConfig = {
+    apiKey: "AIzaSyD95lw4T57c6nYSrlvdEoK20GtQR-dBg5g",
+    authDomain: "limpeza-c745c.firebaseapp.com",
+    projectId: "limpeza-c745c",
+    storageBucket: "limpeza-c745c.firebasestorage.app",
+    messagingSenderId: "192675928694",
+    appId: "1:192675928694:web:f1eef86c50fa7b9252dd57"
+  };
+
+  var sistema_equipamentos_ref = {
+    'sul1': ['11CR12', '11CV72', '02CV002'],
+    'sul2': ['11LK03', '11CR14', '02CV009', '11CV68', '11CV67', '11CV07', '11CR05', '11CV69', '11CV73', '11CR19'],
+        'centro': ['11CR13', '02CV37', '02CV38', '02CV39', '02CV40', '11CV21', '11CV64', '11LK01', '11CV20', 'Hopper 13', '02CV41'],
+    'norte': ['11CR03', '11CR10', '11CR15', '11CV23', '11CV24', '11CV70', 'Lokotrack 01'],
+    'fazendao': ['11LK02', '11CV56', 'Lokotrack 02']
+  };
+
+  var PALETTE = ['#4e79a7', '#f28e2b', '#e15759', '#76b7b2', '#59a14f', '#edc949', '#af7aa1', '#ff9da7', '#9c755f', '#bab0ab'];
+  
+  function mapColors(labels) {
+    var bg = [], bd = [], i;
+    for (i = 0; i < labels.length; i++) {
+      var c = PALETTE[i % PALETTE.length];
+      bg.push(hexToRgba(c, 0.6));
+      bd.push(c);
+    }
+    return { bg: bg, bd: bd };
+  }
+  
+  function hexToRgba(hex, a) {
+    var r = parseInt(hex.substr(1, 2), 16), g = parseInt(hex.substr(3, 2), 16), b = parseInt(hex.substr(5, 2), 16);
+    return 'rgba(' + r + ',' + g + ',' + b + ',' + (a || 1) + ')';
+  }
+  
+  var STATUS_COLORS = {
+    'Concluída': '#2ca02c',
+    'Em andamento': '#ff7f0e',
+    'Pendente': '#d62728',
+    'Outros': '#7f7f7f'
+  };
+  
+  var REG_LABEL = { 'sul1': 'Sul 1', 'sul2': 'Sul 2', 'norte': 'Norte', 'centro': 'Centro', 'fazendao': 'Fazendão', '': 'N/D' };
+
+  function norm(s) { return text(s).trim(); }
+  function stripAcc(s) { return text(s).normalize ? text(s).normalize('NFD').replace(/[\u0300-\u036f]/g, '') : text(s); }
+  
+  function canonicalStatus(s) {
+    var x = norm(s).toLowerCase();
+    if (x === 'pendente' || x === 'pendentes') return 'Pendente';
+    if (x === 'em andamento' || x === 'andamento') return 'Em andamento';
+    if (x === 'concluida' || x === 'concluída' || x === 'concluido' || x === 'concluído' || x === 'feito' || x === 'finalizado' || x === 'finalizada') return 'Concluída';
+    return s && s.length ? s : 'Pendente';
+  }
+  
+  function deriveSistema(tag, area, sistema) {
+    if (sistema) return sistema;
+    var t = norm(tag), m = t.match(/[A-Za-z]{2,}/);
+    if (m) return m[0].toUpperCase();
+    return norm(area);
+  }
+  
+  function deriveRegiao(area) {
+    var a = norm(area).toLowerCase();
+    if (a.indexOf('sul 1') > -1 || a.indexOf('sul1') > -1) return 'sul1';
+    if (a.indexOf('sul 2') > -1 || a.indexOf('sul2') > -1) return 'sul2';
+    if (a.indexOf('centro') > -1) return 'centro';
+    if (a.indexOf('norte') > -1) return 'norte';
+    if (a.indexOf('fazend') > -1) return 'fazendao';
+    if (a.indexOf('marginal') > -1) return 'norte';
+    return '';
+  }
+
+  function normDate(v) {
+    if (v === null || v === undefined) return '';
+    if (typeof v === 'number') {
+      var base = new Date(Date.UTC(1899, 11, 30));
+      var ms = v * 86400000;
+      var dt = new Date(base.getTime() + ms);
+      var d = ('0' + dt.getUTCDate()).slice(-2);
+      var m = ('0' + (dt.getUTCMonth() + 1)).slice(-2);
+      var a = dt.getUTCFullYear();
+      return d + '/' + m + '/' + a;
+    }
+    var s = String(v).trim();
+    if (/^\d{4}-\d{2}-\d{2}/.test(s)) {
+      var p = s.split('T')[0].split('-');
+      return p[2] + '/' + p[1] + '/' + p[0];
+    }
+    if (/^\d{1,2}\/\d{1,2}\/\d{2,4}$/.test(s)) {
+      var q = s.split('/');
+      var dd = ('0' + q[0]).slice(-2);
+      var mm = ('0' + q[1]).slice(-2);
+      var aa = q[2].length === 2 ? ('20' + q[2]) : q[2];
+      return dd + '/' + mm + '/' + aa;
+    }
+    return s;
+  }
+
+  var memCur = null, memHist = null;
+  var db = null, realtimeUnsub = null, cloudCache = [], isPullingFromCloud = false, syncTimer = null;
+
+  function safeJsonParse(raw) { try { return JSON.parse(raw || '[]'); } catch (e) { return []; } }
+  function loadAll() { return memCur || safeJsonParse(localStorage.getItem(LS_CUR)); }
+  function loadHist() { return memHist || safeJsonParse(localStorage.getItem(LS_HIS)); }
+  function persistLocal(key, value) {
+    var payload = JSON.stringify(value || []);
+    try { localStorage.setItem(key, payload); return true; }
+    catch (e) { console.warn('Falha no localStorage para', key, e); return false; }
+  }
+  function queueCloudSync() {
+    if (isPullingFromCloud) return;
+    clearTimeout(syncTimer);
+    syncTimer = setTimeout(function(){ cloudPush(true); }, 700);
+  }
+  function saveAll(v) { memCur = (v || []); persistLocal(LS_CUR, memCur); queueCloudSync(); }
+  function saveHist(v) { memHist = (v || []); persistLocal(LS_HIS, memHist); queueCloudSync(); }
+  function loadAuto() { return localStorage.getItem(LS_AUTO) === '1'; }
+
+  var parsed = [];
+
+  function renderTable() {
+    var tb = $('tb'); 
+    if (!tb) return; 
+    tb.innerHTML = '';
+    var arr = loadAll();
+    
+    for (var i = 0; i < arr.length; i++) {
+      var r = arr[i];
+      r.STATUS = canonicalStatus(r.STATUS || 'Pendente');
+      r.SISTEMA = deriveSistema(r.TAG, r['ÁREA'], r.SISTEMA);
+      r.REGIAO = deriveRegiao(r['ÁREA']) || r.REGIAO || '';
+      
+      var tr = document.createElement('tr');
+      var espec = '<div class="clamp">' + text(r['ESPECIFICAÇÃO'] || '').replace(/\n/g, '<br>') + '</div>';
+      
+      tr.innerHTML =
+        '<td><input type="checkbox" class="row-select-plan" data-index="' + i + '"></td>' +
+        '<td>' + (r.OM || '-') + '</td><td>' + (r.DATA || '-') + '</td><td>' + (r['MÊS'] || '-') + '</td><td>' + (r.DIA || '-') + '</td>' +
+        '<td>' + (r['ÁREA'] || '-') + '</td><td>' + (r.TAG || '-') + '</td><td>' + (r.SISTEMA || '-') + '</td><td>' + (REG_LABEL[r.REGIAO || ''] || r.REGIAO || '-') + '</td>' +
+        '<td>' + espec + '</td>' +
+        '<td><span class="badge" style="background:' + (STATUS_COLORS[r.STATUS] || '#adb5bd') + ';">' + (r.STATUS) + '</span></td>' +
+        '<td>' + (r.OBSERVAÇÕES || '-') + '</td>' +
+        '<td><div class="btn-group btn-group-sm">' +
+          '<button class="btn btn-outline-secondary" data-action="st" data-i="' + i + '" data-v="Pendente" type="button">P</button>' +
+          '<button class="btn btn-outline-warning" data-action="st" data-i="' + i + '" data-v="Em andamento" type="button">E</button>' +
+          '<button class="btn btn-outline-success" data-action="st" data-i="' + i + '" data-v="Concluída" type="button">C</button>' +
+          '<button class="btn btn-outline-primary" data-action="obs" data-i="' + i + '" type="button"><i class="fa-solid fa-pen"></i></button>' +
+          '<button class="btn btn-outline-danger" data-action="delete-plan" data-i="' + i + '" type="button" title="Excluir OM"><i class="fa-solid fa-trash"></i></button>' +
+        '</div></td>';
+      
+      tb.appendChild(tr);
+    }
+    updateCharts();
+  }
+
+  function renderHist() {
+    var tb = $('tb-hist'); 
+    if (!tb) return; 
+    tb.innerHTML = '';
+    var arr = loadHist();
+    
+    for (var i = 0; i < arr.length; i++) {
+      var r = arr[i];
+      r.STATUS = canonicalStatus(r.STATUS || '');
+      r.SISTEMA = deriveSistema(r.TAG, r['ÁREA'], r.SISTEMA);
+      r.REGIAO = deriveRegiao(r['ÁREA']) || r.REGIAO || '';
+      
+      var tr = document.createElement('tr');
+      var espec = '<div class="clamp">' + text(r['ESPECIFICAÇÃO'] || '').replace(/\n/g, '<br>') + '</div>';
+      var arq = r.ARQUIVADO_EM ? new Date(r.ARQUIVADO_EM).toLocaleString('pt-BR') : '-';
+      
+      tr.innerHTML =
+        '<td><input type="checkbox" class="hist-check" data-i="' + i + '"></td>' +
+        '<td>' + (r.OM || '-') + '</td><td>' + (r.DATA || '-') + '</td><td>' + (r['ÁREA'] || '-') + '</td>' +
+        '<td>' + (r.TAG || '-') + '</td><td>' + (r.SISTEMA || '-') + '</td><td>' + (REG_LABEL[r.REGIAO || ''] || r.REGIAO || '-') + '</td>' +
+        '<td>' + espec + '</td>' +
+        '<td><span class="badge" style="background:' + (STATUS_COLORS[r.STATUS] || '#adb5bd') + ';">' + (r.STATUS) + '</span></td>' +
+        '<td>' + arq + '</td>' +
+        '<td><button class="btn btn-danger btn-sm" data-action="delete-hist" data-i="' + i + '" type="button" title="Excluir do histórico"><i class="fa-solid fa-trash"></i></button></td>';
+      
+      tb.appendChild(tr);
+    }
+  }
+
+  // Mapeamento de cabeçalhos
+  var HEAD_MAP = {
+    'om': 'OM',
+    'ordemdemanutencao': 'OM',
+    'data': 'DATA',
+    'dt': 'DATA',
+    'area': 'ÁREA',
+    'setor': 'ÁREA',
+    'tag': 'TAG',
+    'especificacao': 'ESPECIFICAÇÃO',
+    'descricao': 'ESPECIFICAÇÃO',
+    'sistema': 'SISTEMA',
+    'regiao': 'REGIAO',
+    'mes': 'MÊS',
+    'dia': 'DIA',
+    'semana': 'SEMANA',
+    'semanadomes': 'SEMANA DO MÊS',
+    'status': 'STATUS',
+    'observacoes': 'OBSERVAÇÕES'
+  };
+
+  function keyCanon(s) { 
+    return stripAcc(norm(s)).toLowerCase().replace(/\s+/g, '').replace(/[^\w]/g, ''); 
+  }
+
+  function mapHeaders(row) {
+    var map = {};
+    for (var i = 0; i < row.length; i++) {
+      var h = row[i];
+      var k = keyCanon(h || '');
+      if (HEAD_MAP[k]) map[HEAD_MAP[k]] = i;
+    }
+    var req = ['OM', 'DATA', 'ÁREA', 'TAG', 'ESPECIFICAÇÃO'];
+    var ok = true;
+    for (var i = 0; i < req.length; i++) {
+      if (map[req[i]] === undefined) {
+        ok = false;
+        break;
+      }
+    }
+    return { ok: ok, map: map };
+  }
+
+  // Importação de arquivos
+  function handleFile(file) {
+    var reader = new FileReader();
+    reader.onload = function() {
+      try {
+        var workbook = XLSX.read(reader.result, { type: 'array' });
+        var sheetName = workbook.SheetNames[0];
+        var worksheet = workbook.Sheets[sheetName];
+        var aoa = XLSX.utils.sheet_to_json(worksheet, { header: 1, raw: true, defval: '' });
+
+        var headRow = 0, bestMatch = -1;
+        for (var i = 0; i < Math.min(10, aoa.length); i++) {
+          var mh = mapHeaders(aoa[i]);
+          var m = Object.keys(mh.map).length;
+          if (m > bestMatch) {
+            bestMatch = m;
+            headRow = i;
+          }
+        }
+
+        var res = mapHeaders(aoa[headRow]);
+        if (!res.ok) throw new Error('Cabeçalhos não reconhecidos: OM, DATA, ÁREA, TAG, ESPECIFICAÇÃO');
+
+        parsed = [];
+        for (var j = headRow + 1; j < aoa.length; j++) {
+          var rr = aoa[j];
+          var empty = true;
+          for (var k = 0; k < rr.length; k++) {
+            if (String(rr[k]).trim()) {
+              empty = false;
+              break;
+            }
+          }
+          if (empty) continue;
+
+          var newRow = {};
+          Object.keys(res.map).forEach(function(key) {
+            var colIndex = res.map[key];
+            if (key === 'DATA') {
+              newRow[key] = normDate(rr[colIndex]);
+            } else if (key === 'STATUS') {
+              newRow[key] = canonicalStatus(rr[colIndex]);
+            } else {
+              newRow[key] = String(rr[colIndex] || '').trim();
+            }
+          });
+
+          // Derivar campos automáticos
+          newRow.SISTEMA = deriveSistema(newRow.TAG, newRow['ÁREA'], newRow.SISTEMA);
+          newRow.REGIAO = deriveRegiao(newRow['ÁREA']) || newRow.REGIAO || '';
+
+          parsed.push(newRow);
+        }
+
+        var excelHead = $('excel-head');
+        var bodyPreview = $('excel-body');
+        
+        excelHead.innerHTML = '';
+        bodyPreview.innerHTML = '';
+        
+        var headers = ['OM', 'DATA', 'MÊS', 'DIA', 'ÁREA', 'TAG', 'ESPECIFICAÇÃO'];
+        for (var i = 0; i < headers.length; i++) { 
+          var th = document.createElement('th'); 
+          th.textContent = headers[i]; 
+          excelHead.appendChild(th); 
+        }
+        
+        var html = ''; 
+        var max = Math.min(parsed.length, 200);
+        for (var j = 0; j < max; j++) { 
+          var r = parsed[j]; 
+          html += '<tr>';
+          for (var k = 0; k < headers.length; k++) { 
+            var key = headers[k], val = (key === 'ESPECIFICAÇÃO' ? text(r[key] || '').substring(0, 160) + (text(r[key] || '').length > 160 ? '…' : '') : text(r[key] || '')); 
+            html += '<td>' + val + '</td>'; 
+          }
+          html += '</tr>';
+        }
+        bodyPreview.innerHTML = html;
+        $('btn-importar').disabled = false;
+        alert('Arquivo analisado. Clique em Importar.');
+      } catch (err) { 
+        alert('Erro processando arquivo: ' + (err.message || err)); 
+      }
+    };
+    reader.readAsArrayBuffer(file);
+  }
+
+  // Drop zone
+  var drop = $('drop');
+  if (drop) {
+    var prevent = function(e) { e.preventDefault(); e.stopPropagation(); };
+    drop.addEventListener('dragenter', prevent); 
+    drop.addEventListener('dragover', prevent);
+    drop.addEventListener('dragleave', prevent); 
+    drop.addEventListener('drop', function(e) { 
+      prevent(e); 
+      var f = e.dataTransfer.files[0]; 
+      if (f) { 
+        handleFile(f); 
+      } 
+    });
+    
+    drop.addEventListener('click', function() {
+      $('excel-file').click();
+    });
+  }
+
+  on($('excel-file'), 'change', function(e) {
+    var file = e.target.files[0];
+    if (file) {
+      handleFile(file);
+    }
+  });
+
+  on($('btn-parse-paste'), 'click', function() {
+    try {
+      var txt = $('csv-paste').value || '';
+      if (!txt.trim()) { alert('Cole o CSV.'); return; }
+      var lines = txt.split(/\r?\n/).filter(function(l) { return l.trim().length; });
+      var hasSemi = txt.indexOf(';') > -1, hasComma = txt.indexOf(',') > -1;
+      var sep = (hasSemi && hasComma) ? ';' : (hasSemi ? ';' : ',');
+      var header = lines[0].split(sep).map(function(x) { return x.trim(); }); 
+      var mh = mapHeaders(header); 
+      if (!mh.ok) throw new Error('Cabeçalhos não reconhecidos.');
+      
+      parsed = [];
+      for (var i = 1; i < lines.length; i++) { 
+        var cols = lines[i].split(sep);
+        parsed.push({
+          'OM': cols[mh.map['OM']] || '', 
+          'DATA': normDate(cols[mh.map['DATA']] || ''), 
+          'MÊS': mh.map['MÊS'] !== undefined ? (cols[mh.map['MÊS']] || '') : '', 
+          'DIA': mh.map['DIA'] !== undefined ? (cols[mh.map['DIA']] || '') : '', 
+          'ÁREA': cols[mh.map['ÁREA']] || '', 
+          'TAG': cols[mh.map['TAG']] || '', 
+          'ESPECIFICAÇÃO': cols[mh.map['ESPECIFICAÇÃO']] || '', 
+          'STATUS': 'Pendente', 
+          'OBSERVAÇÕES': ''
+        });
+      }
+      
+      var excelHead = $('excel-head');
+      var bodyPreview = $('excel-body');
+      excelHead.innerHTML = ''; 
+      bodyPreview.innerHTML = '';
+      
+      var headers = ['OM', 'DATA', 'MÊS', 'DIA', 'ÁREA', 'TAG', 'ESPECIFICAÇÃO'];
+      for (var i = 0; i < headers.length; i++) { 
+        var th = document.createElement('th'); 
+        th.textContent = headers[i]; 
+        excelHead.appendChild(th); 
+      }
+      
+      var html = ''; 
+      var max = Math.min(parsed.length, 200);
+      for (var j = 0; j < max; j++) { 
+        var r = parsed[j]; 
+        html += '<tr>';
+        for (var k = 0; k < headers.length; k++) { 
+          var key = headers[k], val = (key === 'ESPECIFICAÇÃO' ? text(r[key] || '').substring(0, 160) + (text(r[key] || '').length > 160 ? '…' : '') : text(r[key] || '')); 
+          html += '<td>' + val + '</td>'; 
+        }
+        html += '</tr>';
+      }
+      bodyPreview.innerHTML = html;
+      $('btn-importar').disabled = false;
+      alert('Texto analisado. Clique em Importar.');
+    } catch (err) { 
+      alert('Erro analisando texto: ' + (err.message || err)); 
+    }
+  });
+
+  on($('btn-importar'), 'click', function() {
+    try {
+      if (!parsed || !parsed.length) { alert('Nenhum dado analisado. Selecione arquivo ou cole texto.'); return; }
+      var replace = $('replace-mode').checked;
+      var base = replace ? [] : loadAll();
+      for (var i = 0; i < parsed.length; i++) base.push(parsed[i]);
+      saveAll(base); 
+      renderTable(); 
+      updateCharts();
+      alert('Importadas ' + parsed.length + ' linhas.');
+    } catch (err) { 
+      alert('Erro no Importar: ' + (err.message || err)); 
+    }
+  });
+
+  // Delegação de cliques para botões da tabela Planilha
+  document.addEventListener('click', function(e) {
+    var target = e.target;
+    while (target && target.tagName !== 'BUTTON' && target !== document.body) { target = target.parentNode; }
+    if (!target || target.tagName !== 'BUTTON') return;
+    var act = target.getAttribute('data-action');
+    try {
+      if (act === 'st') {
+        var i = parseInt(target.getAttribute('data-i'), 10); 
+        var v = target.getAttribute('data-v'); 
+        var cur = loadAll(); 
+        cur[i].STATUS = v; 
+        saveAll(cur);
+        if (loadAuto() && v === 'Concluída') { 
+          exportConcluidas(); 
+        } else { 
+          renderTable(); 
+          updateCharts(); 
+        }
+      }
+      if (act === 'obs') {
+        var i2 = parseInt(target.getAttribute('data-i'), 10); 
+        var cur2 = loadAll(); 
+        var txtp = prompt('Observações:', cur2[i2].OBSERVAÇÕES || ''); 
+        if (txtp !== null) { 
+          cur2[i2].OBSERVAÇÕES = txtp; 
+          saveAll(cur2); 
+          renderTable(); 
+        }
+      }
+      if (act === 'delete-plan') {
+        var i3 = parseInt(target.getAttribute('data-i'), 10); 
+        var cur3 = loadAll(); 
+        var om = cur3[i3].OM || 'sem OM';
+        if (confirm('Excluir permanentemente a OM ' + om + '?')) {
+          cur3.splice(i3, 1);
+          saveAll(cur3);
+          renderTable();
+          updateCharts();
+          alert('OM ' + om + ' excluída permanentemente.');
+        }
+      }
+      if (act === 'delete-hist') {
+        var i4 = parseInt(target.getAttribute('data-i'), 10); 
+        var hist = loadHist(); 
+        var om = hist[i4].OM || 'sem OM';
+        if (confirm('Excluir permanentemente a OM ' + om + ' do histórico?')) {
+          hist.splice(i4, 1);
+          saveHist(hist);
+          renderHist();
+          alert('OM ' + om + ' excluída do histórico.');
+        }
+      }
+    } catch (err) { 
+      alert('Erro na ação: ' + (err.message || err)); 
+    }
+  });
+
+  // Seleção de todas as linhas na planilha
+  on($('select-all-plan'), 'change', function(e) {
+    var checks = document.querySelectorAll('.row-select-plan');
+    for (var i = 0; i < checks.length; i++) {
+      checks[i].checked = e.target.checked;
+    }
+  });
+
+  // Seleção de todas as linhas no histórico
+  on($('hist-all'), 'change', function(e) { 
+    var cbs = document.querySelectorAll('.hist-check'); 
+    for (var i = 0; i < cbs.length; i++) { 
+      cbs[i].checked = e.target.checked; 
+    } 
+  });
+
+  on($('auto-archive'), 'change', function(e) { localStorage.setItem(LS_AUTO, e.target.checked ? '1' : '0'); });
+  
+  on($('btn-exportar'), 'click', function() { 
+    try { 
+      exportConcluidas(); 
+    } catch (err) { 
+      alert('Erro exportar: ' + (err.message || err)); 
+    } 
+  });
+  
+  on($('btn-reset'), 'click', function() { 
+    try { 
+      if (confirm('Apagar tudo?')) { 
+        localStorage.removeItem(LS_CUR); 
+        localStorage.removeItem(LS_HIS); 
+        renderTable(); 
+        renderHist(); 
+        updateCharts(); 
+      } 
+    } catch (err) { 
+      alert('Erro reset: ' + (err.message || err)); 
+    } 
+  });
+  
+  on($('btn-restaurar'), 'click', function() {
+    try {
+      var ids = [], cbs = document.querySelectorAll('.hist-check');
+      for (var i = 0; i < cbs.length; i++) { 
+        if (cbs[i].checked) ids.push(parseInt(cbs[i].getAttribute('data-i'), 10)); 
+      }
+      var hist = loadHist(), cur = loadAll(), keep = [];
+      for (var j = 0; j < hist.length; j++) { 
+        if (ids.indexOf(j) > -1) cur.push(hist[j]); 
+        else keep.push(hist[j]); 
+      }
+      saveAll(cur); 
+      saveHist(keep); 
+      renderTable(); 
+      renderHist(); 
+      updateCharts();
+    } catch (err) { 
+      alert('Erro restaurar: ' + (err.message || err)); 
+    }
+  });
+
+  on($('btn-clear-hist'), 'click', function() {
+    try {
+      if (confirm('Limpar TODO o histórico? Esta ação não pode ser desfeita.')) {
+        localStorage.removeItem(LS_HIS);
+        renderHist();
+        alert('Histórico limpo com sucesso.');
+      }
+    } catch (err) {
+      alert('Erro ao limpar histórico: ' + (err.message || err));
+    }
+  });
+
+  function exportConcluidas() {
+    var cur = loadAll(), keep = [], move = [];
+    for (var i = 0; i < cur.length; i++) { 
+      if (canonicalStatus(cur[i].STATUS) === 'Concluída') move.push(cur[i]); 
+      else keep.push(cur[i]); 
+    }
+    var hist = loadHist(); 
+    for (var j = 0; j < move.length; j++) { 
+      var r = move[j]; 
+      r.ARQUIVADO_EM = new Date().toISOString(); 
+      hist.push(r); 
+    }
+    saveAll(keep); 
+    saveHist(hist); 
+    renderTable(); 
+    renderHist(); 
+    updateCharts();
+  }
+
+  function currentSelectedEquipamentos(selClass) {
+    selClass = selClass || '.reg';
+    var regs = document.querySelectorAll(selClass + ':checked'), set = {}, out = [], i, r, arr;
+    for (i = 0; i < regs.length; i++) { 
+      r = regs[i].value; 
+      arr = sistema_equipamentos_ref[r] || []; 
+      for (var k = 0; k < arr.length; k++) { 
+        if (!set[arr[k]]) { 
+          set[arr[k]] = 1; 
+          out.push(arr[k]); 
+        } 
+      } 
+    }
+    return out;
+  }
+  
+  function rebuildEquipCheckboxes() {
+    var wrap = $('equip-wrap'); 
+    if (!wrap) return;
+    var eqs = currentSelectedEquipamentos('.reg'); 
+    wrap.innerHTML = '';
+    for (var i = 0; i < eqs.length; i++) {
+      var e = eqs[i], id = 'eq-' + e.replace(/[^a-zA-Z0-9]/g, '');
+      wrap.insertAdjacentHTML('beforeend',
+        '<input type="checkbox" class="btn-check eq" id="' + id + '" value="' + e + '" checked autocomplete="off">' +
+        '<label class="btn btn-outline-secondary btn-chip" for="' + id + '">' + e + '</label>'
+      );
+    }
+  }
+  
+  function filterByEquip(list, cls) {
+    cls = cls || '.eq';
+    var chosen = document.querySelectorAll(cls + ':checked'); 
+    if (!chosen.length) return list;
+    var set = {}, i; 
+    for (i = 0; i < chosen.length; i++) { 
+      set[chosen[i].value] = 1; 
+    }
+    var out = [], j; 
+    for (j = 0; j < list.length; j++) { 
+      var r = list[j]; 
+      if (set[r.TAG]) out.push(r); 
+    }
+    return out;
+  }
+  
+  function collectBase(source) {
+    source = source || (document.querySelector('input[name="srcSel"]:checked') || { value: 'atuais' }).value;
+    var out = [], i, r;
+    if (source === 'atuais' || source === 'ambos') {
+      var a = loadAll();
+      for (i = 0; i < a.length; i++) { 
+        r = a[i]; 
+        out.push({
+          OM: r.OM, DATA: r.DATA, 'MÊS': r['MÊS'], DIA: r.DIA, 'ÁREA': r['ÁREA'], TAG: r.TAG, 
+          SISTEMA: deriveSistema(r.TAG, r['ÁREA'], r.SISTEMA), 
+          REGIAO: (deriveRegiao(r['ÁREA']) || r.REGIAO || ''), 
+          'ESPECIFICAÇÃO': r['ESPECIFICAÇÃO'], STATUS: canonicalStatus(r.STATUS), 
+          OBSERVAÇÕES: r.OBSERVAÇÕES
+        }); 
+      }
+    }
+    if (source === 'historico' || source === 'ambos') {
+      var h = loadHist();
+      for (i = 0; i < h.length; i++) { 
+        r = h[i]; 
+        out.push({
+          OM: r.OM, DATA: r.DATA, 'MÊS': r['MÊS'], DIA: r.DIA, 'ÁREA': r['ÁREA'], TAG: r.TAG, 
+          SISTEMA: deriveSistema(r.TAG, r['ÁREA'], r.SISTEMA), 
+          REGIAO: (deriveRegiao(r['ÁREA']) || r.REGIAO || ''), 
+          'ESPECIFICAÇÃO': r['ESPECIFICAÇÃO'], STATUS: canonicalStatus(r.STATUS), 
+          OBSERVAÇÕES: r.OBSERVAÇÕES
+        }); 
+      }
+    }
+    return out;
+  }
+  
+  function filterDash(rows) {
+    var ini = $('d-ini').value, fim = $('d-fim').value;
+    var regs = document.querySelectorAll('.reg:checked'), regsArr = [], i;
+    for (i = 0; i < regs.length; i++) { 
+      regsArr.push(regs[i].value); 
+    }
+    var out = [], j;
+    for (j = 0; j < rows.length; j++) {
+      var r = rows[j], dt = r.DATA || '', p = dt.split('/'), iso = (p[2] && p[1] && p[0]) ? (p[2] + '-' + ('0' + p[1]).slice(-2) + '-' + ('0' + p[0]).slice(-2)) : '';
+      var ok = true;
+      if (ini && (!iso || iso < ini)) ok = false;
+      if (fim && (!iso || iso > fim)) ok = false;
+      if (regsArr.length && r.REGIAO && regsArr.indexOf(String(r.REGIAO).toLowerCase()) === -1) ok = false;
+      if (ok) out.push(r);
+    }
+    return filterByEquip(out, '.eq');
+  }
+  
+  function monthKeyFromData(dt) {
+    var p = (dt || '').split('/'); 
+    if (!(p[0] && p[1] && p[2])) return '';
+    return p[2] + '-' + ('0' + p[1]).slice(-2);
+  }
+
+  var chStatus = null, chRegioes = null, chEquip = null, chEvolucao = null;
+  
+  function drawOrSkip(ctx, cfg) {
+    if (!window.Chart || !ctx) return null;
+    try { 
+      return new Chart(ctx, cfg); 
+    } catch (e) { 
+      console.warn('Chart falhou', e); 
+      return null; 
+    }
+  }
+  
+  function updateCharts() {
+    rebuildEquipCheckboxes();
+    var base = filterDash(collectBase());
+    var cSt = {}, cReg = {}, cEq = {}, cYM = {};
+    var i, r;
+    for (i = 0; i < base.length; i++) {
+      r = base[i];
+      cSt[r.STATUS] = (cSt[r.STATUS] || 0) + 1;
+      var rg = (r.REGIAO || '').toLowerCase(); 
+      cReg[rg] = (cReg[rg] || 0) + 1;
+      cEq[r.TAG || '—'] = (cEq[r.TAG || '—'] || 0) + 1;
+      var ym = monthKeyFromData(r.DATA || ''); 
+      if (ym) cYM[ym] = (cYM[ym] || 0) + 1;
+    }
+    
+    if (chStatus && chStatus.destroy) chStatus.destroy();
+    if (chRegioes && chRegioes.destroy) chRegioes.destroy();
+    if (chEquip && chEquip.destroy) chEquip.destroy();
+    if (chEvolucao && chEvolucao.destroy) chEvolucao.destroy();
+    
+    var opt = { responsive: true, maintainAspectRatio: false, legend: { position: 'bottom' } };
+
+    // Status
+    var stOrder = ['Pendente', 'Em andamento', 'Concluída'];
+    var stLabels = stOrder.slice();
+    var stData = stOrder.map(function(k) { return cSt[k] || 0; });
+    var stBg = [], stBd = [];
+    for (i = 0; i < stLabels.length; i++) {
+      var col = ({'Concluída': '#2ca02c', 'Em andamento': '#ff7f0e', 'Pendente': '#d62728'})[stLabels[i]] || '#7f7f7f';
+      stBd.push(col); 
+      stBg.push(hexToRgba(col, 0.6));
+    }
+    chStatus = drawOrSkip(get2d('chStatus'), {
+      type: 'doughnut',
+      data: { labels: stLabels, datasets: [{ data: stData, backgroundColor: stBg, borderColor: stBd, borderWidth: 1 }] },
+      options: opt
+    });
+
+    // Regiões
+    var regKeys = ['sul1', 'sul2', 'norte', 'centro', 'fazendao'];
+    var regLabels = regKeys.map(function(k) { return REG_LABEL[k]; });
+    var regData = regKeys.map(function(k) { return cReg[k] || 0; });
+    var rc = mapColors(regLabels);
+    chRegioes = drawOrSkip(get2d('chRegioes'), {
+      type: 'bar',
+      data: { labels: regLabels, datasets: [{ label: 'Regiões', data: regData, backgroundColor: rc.bg, borderColor: rc.bd, borderWidth: 1 }] }, 
+      options: opt
+    });
+
+    // Equipamentos (HORIZONTAL)
+    var eqL = Object.keys(cEq).slice(0, 25), eqD = Object.values(cEq).slice(0, 25), ec = mapColors(eqL);
+    chEquip = drawOrSkip(get2d('chEquip'), {
+      type: 'horizontalBar',
+      data: { labels: eqL, datasets: [{ label: 'Equip.', data: eqD, backgroundColor: ec.bg, borderColor: ec.bd, borderWidth: 1 }] },
+      options: Object.assign({}, opt, { scales: { xAxes: [{ ticks: { beginAtZero: true } }], yAxes: [{ ticks: { autoSkip: false, fontSize: 11 } }] } })
+    });
+
+    // Evolução mensal
+    var ymKeys = Object.keys(cYM).sort();
+    chEvolucao = drawOrSkip(get2d('chEvolucao'), {
+      type: 'line',
+      data: { labels: ymKeys, datasets: [{ label: 'Itens/mês', data: ymKeys.map(function(k) { return cYM[k]; }), backgroundColor: hexToRgba('#4e79a7', 0.2), borderColor: '#4e79a7', fill: true, lineTension: 0.2 }] },
+      options: opt
+    });
+  }
+
+  // Dashboard
+  on($('tab-dash'), 'click', function(e) {
+    if (e.target && (e.target.classList.contains('btn-check') || e.target.classList.contains('btn'))) { 
+      setTimeout(updateCharts, 10); 
+    }
+  });
+  
+  on($('btn-aplicar'), 'click', function() { 
+    try { 
+      updateCharts(); 
+    } catch (err) { 
+      alert('Erro aplicar: ' + (err.message || err)); 
+    } 
+  });
+  
+  on($('btn-limpar'), 'click', function() { 
+    try {
+      $('d-ini').value = ''; 
+      $('d-fim').value = '';
+      document.getElementById('src-at').checked = true;
+      var regs = document.querySelectorAll('.reg'); 
+      for (var i = 0; i < regs.length; i++) { 
+        regs[i].checked = true; 
+      }
+      rebuildEquipCheckboxes(); 
+      updateCharts();
+    } catch (err) { 
+      alert('Erro limpar: ' + (err.message || err)); 
+    } 
+  });
+  
+  on($('btn-compactar'), 'click', function() { 
+    try { 
+      document.body.classList.toggle('compact'); 
+      updateCharts(); 
+    } catch (err) { 
+      alert('Erro compactar: ' + (err.message || err)); 
+    } 
+  });
+
+  // Relatório WhatsApp (inclui Status + Regiões + Equipamentos (h) + Evolução)
+  on($('btn-wa-text'), 'click', function() { 
+    try { 
+      if (!window.html2canvas) { 
+        alert('html2canvas não carregou.'); 
+        return; 
+      } 
+      shareWhatsAppText(); 
+    } catch (err) { 
+      alert('Erro WhatsApp Texto: ' + (err.message || err)); 
+    } 
+  });
+  
+  on($('btn-wa-charts'), 'click', function() { 
+    try { 
+      if (!window.html2canvas) { 
+        alert('html2canvas não carregou.'); 
+        return; 
+      } 
+      shareWhatsAppCharts(); 
+    } catch (err) { 
+      alert('Erro WhatsApp Gráficos: ' + (err.message || err)); 
+    } 
+  });
+
+  function shareWhatsAppText() {
+  // Preserve inputs
+  var base = filterDash(collectBase());
+  var format = ($('wa-format') && $('wa-format').value) || 'pdf';
+  var scale = parseFloat(($('wa-scale') && $('wa-scale').value) || 3) || 3;
+  var compact = ($('wa-compact') && $('wa-compact').checked) || false;
+  var limSpec = parseInt(($('lim-spec') && $('lim-spec').value) || 120) || 120;
+
+  // Build counts
+  var statusCount = {}, regionCount = {};
+  base.forEach(function(r){
+    statusCount[r.STATUS] = (statusCount[r.STATUS]||0)+1;
+    var reg = (REG_LABEL && REG_LABEL[r.REGIAO]) || r.REGIAO || 'N/D';
+    regionCount[reg] = (regionCount[reg]||0)+1;
+  });
+
+  function chunk(arr, size){ var out=[]; for (var i=0;i<arr.length;i+=size) out.push(arr.slice(i,i+size)); return out; }
+  var groups = chunk(base, 10);
+  var totalPages = Math.max(1, groups.length);
+
+  // Offscreen A4 container
+  var host = document.getElementById('pdf-pag-container');
+  if (!host) {
+    host = document.createElement('div');
+    host.id = 'pdf-pag-container';
+    host.style.position = 'fixed';
+    host.style.left = '-99999px';
+    host.style.top = '0';
+    host.style.width = '794px';      // A4 width at 96dpi
+    host.style.background = '#ffffff';
+    host.style.color = '#0b1220';
+    host.style.padding = '16px';
+    document.body.appendChild(host);
+  }
+  host.innerHTML = '';
+
+  function makePageHeader(pageIndex){
+    var header = document.createElement('div');
+    header.innerHTML = '<div style="font-weight:700;font-size:18px;margin:0 0 6px">Relatório de limpeza - SAMARCO</div>'+
+                       '<div style="font-size:12px;opacity:.8;margin-bottom:8px">Gerado em ' + (new Date().toLocaleString('pt-BR')) + '</div>';
+    return header;
+  }
+
+  function makeResumo(){
+    var wrap = document.createElement('div');
+    wrap.className = 'rel-sec';
+    var html = '<div style="font-weight:700;margin-bottom:4px">Resumo Executivo</div>' +
+               '<div class="line"><span class="key">Total de Ordens (seleção):</span> ' + base.length + '</div>';
+    Object.keys(statusCount).forEach(function(s){
+      html += '<div class="line"><span class="key">'+s+':</span> ' + statusCount[s] + '</div>';
+    });
+    if (!compact) {
+      html += '</div><div class="rel-sec"><div class="rel-subtitle" style="font-weight:700;margin-bottom:4px">Por Região</div>';
+      Object.keys(regionCount).forEach(function(reg){
+        html += '<div class="line"><span class="key">'+reg+':</span> ' + regionCount[reg] + '</div>';
+      });
+    }
+    wrap.innerHTML = html;
+    return wrap;
+  }
+
+  function makeDetailsPage(items, pageIndex){
+    var page = document.createElement('section');
+    page.className = 'page';
+    page.style.width = '794px';
+    page.style.minHeight = '1123px'; // A4 height at 96dpi
+    page.style.boxSizing = 'border-box';
+    page.style.background = '#fff';
+    page.style.padding = '12px 16px';
+
+    page.appendChild(makePageHeader(pageIndex));
+    if (pageIndex === 0) page.appendChild(makeResumo());
+
+    var block = document.createElement('div');
+    block.className = 'rel-sec';
+    block.innerHTML = '<div style="font-weight:700;margin-bottom:4px">Detalhes das Ordens (pág. '+(pageIndex+1)+' de '+totalPages+')</div>';
+    items.forEach(function(r){
+      var espec = (r['ESPECIFICAÇÃO']||''); var trunc = espec.length>limSpec ? (espec.substring(0,limSpec)+'.') : espec;
+      var item = document.createElement('div');
+      item.className = 'rel-item';
+      item.style.borderBottom = '1px dashed #e5e7eb';
+      item.style.padding = '6px 0';
+      item.innerHTML = '<div style="display:flex;flex-wrap:wrap;gap:8px 16px;font-size:12px">' +
+        '<div><span class="key">OM:</span> '+(r.OM||'-')+'</div>' +
+        '<div><span class="key">DATA:</span> '+(r.DATA||'-')+'</div>' +
+        '<div><span class="key">ÁREA:</span> '+(r['ÁREA']||'-')+'</div>' +
+        '<div><span class="key">TAG:</span> '+(r.TAG||'-')+'</div>' +
+        '<div><span class="key">SISTEMA:</span> '+(r.SISTEMA||'-')+'</div>' +
+        '<div><span class="key">REGIÃO:</span> '+(((REG_LABEL&&REG_LABEL[r.REGIAO])||r.REGIAO)||"-")+'</div>' +
+        '<div style="flex:1 1 100%"><span class="key">ESPECIFICAÇÃO:</span> '+trunc+'</div>' +
+        (r['OBSERVAÇÕES']?('<div style="flex:1 1 100%"><span class="key">OBS:</span> '+r['OBSERVAÇÕES']+'</div>'):'') +
+      '</div>';
+      block.appendChild(item);
+    });
+    page.appendChild(block);
+
+    var foot = document.createElement('div');
+    foot.style.textAlign = 'right'; foot.style.fontSize = '11px'; foot.style.marginTop = '6px';
+    foot.textContent = 'Página ' + (pageIndex+1) + ' de ' + totalPages;
+    page.appendChild(foot);
+
+    return page;
+  }
+
+  var pages = groups.map(function(g, i){ return makeDetailsPage(g, i); });
+  pages.forEach(function(p){ host.appendChild(p); });
+
+  var els = Array.prototype.slice.call(host.querySelectorAll('.page'));
+  if (!els.length) { alert('Nada para exportar.'); return; }
+
+  if ((format||'pdf').toLowerCase() === 'pdf' && window.jspdf) {
+    var jsPDF = window.jspdf.jsPDF;
+    var pdf = new jsPDF('p', 'pt', 'a4');
+    var A4_W = pdf.internal.pageSize.getWidth();
+    var A4_H = pdf.internal.pageSize.getHeight();
+    var i = 0;
+    (function renderNext(){
+      if (i>=els.length){ pdf.save('relatorio-limpeza-samarco.pdf'); return; }
+      html2canvas(els[i], { scale: scale, backgroundColor:'#ffffff', useCORS:true }).then(function(canvas){
+        var img = canvas.toDataURL('image/png');
+        if (i>0) pdf.addPage();
+        pdf.addImage(img, 'PNG', 0, 0, A4_W, A4_H);
+        i++; renderNext();
+      });
+    })();
+  } else {
+    var ext = (format||'png').toLowerCase();
+    els.forEach(function(el, idx){
+      html2canvas(el, { scale: scale, backgroundColor:'#ffffff', useCORS:true }).then(function(canvas){
+        var a = document.createElement('a');
+        a.download = 'relatorio-limpeza-samarco-p' + (idx+1) + '.' + ext;
+        a.href = canvas.toDataURL('image/' + ext, 0.95);
+        document.body.appendChild(a); a.click(); document.body.removeChild(a);
+      });
+    });
+  }
+}
+
+  function shareWhatsAppCharts() {
+    var format = $('wa-format').value;
+    var scale = parseFloat($('wa-scale').value) || 2;
+    
+    var chartsDiv = document.createElement('div');
+    chartsDiv.style.cssText = 'position:fixed;left:-9999px;top:0;width:800px;background:#fff;padding:20px';
+    
+    chartsDiv.innerHTML = 
+      '<h3 style="text-align:center;margin-bottom:20px">Dashboard - SAMARCO</h3>' +
+      '<div class="rel-grid">' +
+        '<div class="rel-cell">' + $('chStatus').parentNode.outerHTML + '</div>' +
+        '<div class="rel-cell">' + $('chRegioes').parentNode.outerHTML + '</div>' +
+      '</div>' +
+      '<div class="rel-cell-full" style="margin-top:20px">' + $('chEquip').parentNode.outerHTML + '</div>';
+    
+    document.body.appendChild(chartsDiv);
+    
+    html2canvas(chartsDiv, {
+      scale: scale,
+      backgroundColor: '#ffffff'
+    }).then(function(canvas) {
+      document.body.removeChild(chartsDiv);
+      
+      if (format === 'pdf') {
+        var { jsPDF } = window.jspdf;
+        var pdf = new jsPDF('l', 'mm', 'a4');
+        var imgData = canvas.toDataURL('image/png');
+        pdf.addImage(imgData, 'PNG', 10, 10, 277, 0);
+        pdf.save('dashboard-limpeza-samarco.pdf');
+      } else {
+        var link = document.createElement('a');
+        link.download = 'dashboard-limpeza-samarco.' + format;
+        link.href = canvas.toDataURL('image/' + format);
+        link.click();
+      }
+    });
+  }
+
+  // Redesenhar quando as abas ficarem visíveis
+  var tabBtns = document.querySelectorAll('[data-bs-toggle="tab"]');
+  for (var t = 0; t < tabBtns.length; t++) {
+    tabBtns[t].addEventListener('shown.bs.tab', function(ev) {
+      var target = ev.target.getAttribute('data-bs-target');
+      if (target === '#tab-dash') { 
+        updateCharts(); 
+      }
+    });
+  }
+  
+  // Redesenhar ao redimensionar janela
+  var resizeTimer = null;
+  window.addEventListener('resize', function() {
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(function() { 
+      updateCharts(); 
+    }, 200);
+  });
+
+
+  // Nuvem Firebase
+  function getCloudId(r, isArchived) {
+    var parts = [text(r.OM||'').trim(), text(r.TAG||'').trim(), text(r.DATA||'').trim(), isArchived ? 'hist' : 'ativo'];
+    var id = parts.join('|').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9|_-]+/g, '-');
+    return id || ('item-' + Date.now() + '-' + Math.random().toString(36).slice(2,8));
+  }
+
+  function setCloudState(t) {
+    var el = $('cloud-state');
+    if (el) {
+      el.textContent = t;
+      el.className = 'cloud-state';
+      if (t === 'Conectado' || t === 'Realtime Ativo') el.className += ' connected';
+      else if (t === 'Offline') el.className += ' disconnected';
+    }
+  }
+
+  function mapLocalToCloud(r, isArchived) {
+    return {
+      om: r.OM || null,
+      data: r.DATA || null,
+      mes: r['MÊS'] || null,
+      dia: r.DIA || null,
+      area: r['ÁREA'] || null,
+      tag: r.TAG || null,
+      especificacao: r['ESPECIFICAÇÃO'] || null,
+      status: canonicalStatus(r.STATUS || 'Pendente'),
+      observacoes: r.OBSERVAÇÕES || null,
+      sistema: deriveSistema(r.TAG, r['ÁREA'], r.SISTEMA) || null,
+      regiao: (r.REGIAO || deriveRegiao(r['ÁREA']) || null),
+      is_archived: !!isArchived,
+      archived_at: isArchived ? (r.ARQUIVADO_EM || new Date().toISOString()) : null,
+      updated_at: new Date().toISOString(),
+      source: 'html_limpeza_v7_firebase'
+    };
+  }
+
+  function mapCloudToLocal(r) {
+    return {
+      OM: r.om || '',
+      DATA: r.data || '',
+      'MÊS': r.mes || '',
+      DIA: r.dia || '',
+      'ÁREA': r.area || '',
+      TAG: r.tag || '',
+      SISTEMA: r.sistema || deriveSistema(r.tag, r.area, r.sistema) || '',
+      REGIAO: r.regiao || deriveRegiao(r.area) || '',
+      'ESPECIFICAÇÃO': r.especificacao || '',
+      STATUS: canonicalStatus(r.status || 'Pendente'),
+      OBSERVAÇÕES: r.observacoes || '',
+      ARQUIVADO_EM: r.archived_at || ''
+    };
+  }
+
+  async function ensureFirebaseReady() {
+    if (db) return db;
+    if (!window.firebase) throw new Error('Biblioteca Firebase não carregou.');
+    if (!firebase.apps.length) firebase.initializeApp(firebaseConfig);
+    db = firebase.firestore();
+    setCloudState('Conectado');
+    return db;
+  }
+
+  async function ensureInitialCollections() {
+    var adb = await ensureFirebaseReady();
+    var metaRef = adb.collection('limpezas_config').doc('estrutura_inicial');
+    var snap = await metaRef.get();
+    if (!snap.exists) {
+      await metaRef.set({
+        projeto: 'limpeza-c745c',
+        colecao_principal: COLLECTION,
+        criado_em: new Date().toISOString(),
+        versao: 'v7-firebase'
+      });
+    }
+  }
+
+  async function cloudPush(silent) {
+    var adb = await ensureFirebaseReady();
+    await ensureInitialCollections();
+    var batch = adb.batch();
+    var ativos = loadAll();
+    var hist = loadHist();
+    ativos.forEach(function(r){ batch.set(adb.collection(COLLECTION).doc(getCloudId(r,false)), mapLocalToCloud(r,false), {merge:true}); });
+    hist.forEach(function(r){ batch.set(adb.collection(COLLECTION).doc(getCloudId(r,true)), mapLocalToCloud(r,true), {merge:true}); });
+    batch.set(adb.collection('limpezas_backup').doc('ultimo_envio'), {
+      total_ativos: ativos.length,
+      total_historico: hist.length,
+      atualizado_em: new Date().toISOString()
+    }, {merge:true});
+    await batch.commit();
+    if (!silent) alert('Enviado para o Firebase com sucesso.');
+  }
+
+  async function cloudPull(silent) {
+    var adb = await ensureFirebaseReady();
+    await ensureInitialCollections();
+    isPullingFromCloud = true;
+    try {
+      var snap = await adb.collection(COLLECTION).get();
+      var data = [];
+      snap.forEach(function(doc){ var d = doc.data() || {}; d.__id = doc.id; data.push(d); });
+      cloudCache = data;
+      var atuais = [], hist = [];
+      data.forEach(function(r){ (r.is_archived ? hist : atuais).push(mapCloudToLocal(r)); });
+      memCur = atuais; memHist = hist;
+      persistLocal(LS_CUR, memCur);
+      persistLocal(LS_HIS, memHist);
+      renderTable(); renderHist(); updateCharts(); renderCloudTable();
+      if (!silent) alert('Dados sincronizados do Firebase.');
+    } finally {
+      isPullingFromCloud = false;
+    }
+  }
+
+  async function cloudList() {
+    var adb = await ensureFirebaseReady();
+    var snap = await adb.collection(COLLECTION).orderBy('updated_at','desc').limit(500).get();
+    cloudCache = [];
+    snap.forEach(function(doc){ var d = doc.data() || {}; d.__id = doc.id; cloudCache.push(d); });
+    renderCloudTable();
+  }
+
+  function startRealtime() {
+    ensureFirebaseReady().then(function(adb){
+      if (realtimeUnsub) { alert('Realtime já ativo.'); return; }
+      realtimeUnsub = adb.collection(COLLECTION).onSnapshot(function(){
+        setCloudState('Realtime Ativo');
+        cloudPull(true).catch(function(err){ console.error(err); });
+      }, function(err){
+        console.error(err); setCloudState('Offline');
+      });
+      setCloudState('Realtime Ativo');
+      alert('Realtime ativado. Mudanças na nuvem serão sincronizadas automaticamente.');
+    }).catch(function(err){ alert('Erro realtime: ' + (err.message || err)); });
+  }
+
+  on($('btn-cloud-connect'), 'click', function() {
+    ensureFirebaseReady().then(function(){ return ensureInitialCollections(); }).then(function(){
+      $('sb-url').value = firebaseConfig.projectId || '';
+      $('sb-key').value = firebaseConfig.appId || '';
+      alert('Firebase conectado.');
+    }).catch(function(err){ alert('Erro conectar: ' + (err.message || err)); });
+  });
+
+  on($('btn-cloud-savekeys'), 'click', function() {
+    alert('O Firebase já está embutido neste HTML. Não é necessário salvar credenciais manualmente.');
+  });
+
+  on($('btn-cloud-clearkeys'), 'click', function() {
+    alert('As credenciais do Firebase estão fixas no HTML para este projeto.');
+  });
+
+  on($('btn-cloud-push'), 'click', function() {
+    cloudPush(false).catch(function(err){ alert('Erro push: ' + (err.message || err)); });
+  });
+
+  on($('btn-cloud-pull'), 'click', function() {
+    cloudPull(false).catch(function(err){ alert('Erro pull: ' + (err.message || err)); });
+  });
+
+  on($('btn-cloud-list'), 'click', function() {
+    cloudList().catch(function(err){ alert('Erro listar: ' + (err.message || err)); });
+  });
+
+  on($('btn-cloud-rt'), 'click', function() { startRealtime(); });
+
+  on($('btn-cloud-ping'), 'click', function() {
+    ensureFirebaseReady().then(function(adb){ return adb.collection(COLLECTION).get(); }).then(function(snap){
+      alert('Conexão OK. Registros no Firebase: ' + snap.size);
+    }).catch(function(err){ alert('Erro ping: ' + (err.message || err)); });
+  });
+
+  function renderCloudTable() {
+    var tb = $('tb-cloud');
+    if (!tb) return;
+    tb.innerHTML = '';
+    for (var i = 0; i < cloudCache.length; i++) {
+      var r = cloudCache[i];
+      var tr = document.createElement('tr');
+      var espec = '<div class="clamp">' + text(r.especificacao || '').replace(/
+/g, '<br>') + '</div>';
+      var arq = r.is_archived ? 'Sim' : 'Não';
+      tr.innerHTML =
+        '<td>' + (r.om || '-') + '</td><td>' + (r.data || '-') + '</td><td>' + (r.area || '-') + '</td>' +
+        '<td>' + (r.tag || '-') + '</td><td>' + (r.sistema || '-') + '</td><td>' + (REG_LABEL[r.regiao || ''] || r.regiao || '-') + '</td>' +
+        '<td>' + espec + '</td>' +
+        '<td><span class="badge" style="background:' + (STATUS_COLORS[r.status] || '#adb5bd') + ';">' + (r.status || 'Pendente') + '</span></td>' +
+        '<td>' + arq + '</td>';
+      tb.appendChild(tr);
+    }
+  }
+
+
+  // Inicialização
+  function init() {
+    $('sb-url').value = firebaseConfig.projectId || '';
+    $('sb-key').value = firebaseConfig.appId || '';
+    $('auto-archive').checked = loadAuto();
+    renderTable();
+    renderHist();
+    rebuildEquipCheckboxes();
+    updateCharts();
+    ensureFirebaseReady().then(function(){ return ensureInitialCollections(); }).then(function(){
+      setCloudState('Conectado');
+      return cloudPull(true);
+    }).then(function(){
+      return cloudList();
+    }).catch(function(err){
+      console.warn('Firebase indisponível no carregamento inicial:', err);
+      setCloudState('Offline');
+    });
+  }
+
+  // Inicializar
+  init();
+
+} catch (err) {
+  console.error('Erro na inicialização:', err);
+  var bar = $('errbar'), msg = $('errmsg');
+  if (bar && msg) { 
+    bar.style.display = 'block'; 
+    msg.textContent = err.message || String(err); 
+  }
+}
+});
+</script>
+</body>
+</html>
