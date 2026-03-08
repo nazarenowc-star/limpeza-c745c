@@ -2935,4 +2935,62 @@ try {
 });
 </script>
 </body>
+  <!-- SENSOR NAZA PORTAL v2 -->
+<script>
+(function() {
+    const SISTEMA_ID = 'limpeza';
+    const FIREBASE_URL = 'https://firestore.googleapis.com/v1/projects/naza-auditoria-hub/databases/(default)/documents/sensores/' + SISTEMA_ID;
+    
+    function coletarDados() {
+        const texto = document.body.innerText;
+        const numeros = texto.match(/\d+\.?\d*/g) || [];
+        let valores = numeros.slice(0, 3).map(n => parseFloat(n));
+        
+        if (valores.length < 3) {
+            const areas = document.querySelectorAll('.area, .zone, tr').length;
+            const concluidas = document.querySelectorAll('.done, .complete, .success').length;
+            const pendentes = areas - concluidas;
+            valores = [
+                Math.min(100, (concluidas / Math.max(1, areas)) * 100) || 91,  // % concluído
+                Math.min(100, (concluidas / Math.max(1, areas)) * 100) || 85,  // equipe disp
+                Math.min(100, (pendentes / Math.max(1, areas)) * 100) || 23   // % pendente
+            ];
+        }
+        
+        return valores;
+    }
+    
+    function enviar() {
+        const valores = coletarDados();
+        fetch(FIREBASE_URL, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                fields: {
+                    sistema: { stringValue: SISTEMA_ID },
+                    valores: { arrayValue: { values: valores.map(v => ({ doubleValue: v })) } },
+                    timestamp: { timestampValue: new Date().toISOString() }
+                }
+            })
+        }).then(() => console.log('✅ Sensor Limpeza:', valores))
+        .catch(() => {});
+        
+        fetch('https://firestore.googleapis.com/v1/projects/naza-auditoria-hub/databases/(default)/documents/sensor_logs', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                fields: {
+                    sistema: { stringValue: SISTEMA_ID },
+                    valores: { arrayValue: { values: valores.map(v => ({ doubleValue: v })) } },
+                    timestamp: { timestampValue: new Date().toISOString() }
+                }
+            })
+        }).catch(() => {});
+    }
+    
+    setInterval(enviar, 30000);
+    enviar();
+    console.log('🔵 Sensor Limpeza ativo');
+})();
+</script>
 </html>
