@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>SAMARCO - Programação Semanal de Limpeza Industrial v7.1 (Estável)</title>
+<title>SAMARCO - Programação Semanal de Limpeza Industrial v7.2 (com Sensor)</title>
 <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
 <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" rel="stylesheet">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
@@ -456,6 +456,25 @@
     display: none;
   }
 
+  /* SENSOR STATUS */
+  .sensor-status {
+    background: #6f42c1;
+    color: white;
+    padding: 0.375rem 0.75rem;
+    border-radius: 9999px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    margin-left: 0.5rem;
+  }
+  
+  .sensor-status.active {
+    background: #28a745;
+  }
+  
+  .sensor-status.inactive {
+    background: #dc3545;
+  }
+
   /* RESPONSIVE */
   @media (max-width: 768px) {
     .samarco-header {
@@ -640,25 +659,6 @@
   .cloud-secret::placeholder {
     letter-spacing: normal;
   }
-  
-  /* SENSOR STATUS */
-  .sensor-status {
-    background: #6f42c1;
-    color: white;
-    padding: 0.375rem 0.75rem;
-    border-radius: 9999px;
-    font-size: 0.75rem;
-    font-weight: 600;
-    margin-left: 0.5rem;
-  }
-  
-  .sensor-status.active {
-    background: #28a745;
-  }
-  
-  .sensor-status.inactive {
-    background: #dc3545;
-  }
 </style>
 <noscript><div class="alert alert-danger m-2">Este arquivo precisa de JavaScript habilitado.</div></noscript>
 </head>
@@ -673,7 +673,7 @@
           <i class="fa-solid fa-industry me-2"></i>SAMARCO
         </div>
         <div class="samarco-subtitle">
-          PROGRAMAÇÃO SEMANAL - LIMPEZA INDUSTRIAL - OPERAÇÃO DE MINA - PREVENTIVA v7.1
+          PROGRAMAÇÃO SEMANAL - LIMPEZA INDUSTRIAL - OPERAÇÃO DE MINA - PREVENTIVA v7.2
         </div>
       </div>
       <div class="col-md-4">
@@ -1256,11 +1256,11 @@
 (function() {
   'use strict';
   
-  // ===== CONFIGURAÇÃO ROBUSTA =====
-  const APP_VERSION = '7.1';
-  const LS_CUR = 'prog_sem_v71_cur';
-  const LS_HIS = 'prog_sem_v71_hist';
-  const LS_AUTO = 'prog_sem_v71_auto';
+  // ===== CONFIGURAÇÃO =====
+  const APP_VERSION = '7.2';
+  const LS_CUR = 'prog_sem_v72_cur';
+  const LS_HIS = 'prog_sem_v72_hist';
+  const LS_AUTO = 'prog_sem_v72_auto';
   const COLLECTION = 'limpezas_programadas';
   
   // Configuração Firebase principal
@@ -1418,7 +1418,7 @@
   function loadAuto() { return localStorage.getItem(LS_AUTO) === '1'; }
   
   // ===== INDEXEDDB PARA FALLBACK =====
-  const IDB_NAME = 'limpeza_industrial_cache_v71';
+  const IDB_NAME = 'limpeza_industrial_cache_v72';
   const IDB_STORE = 'kv';
   
   function openAppDB() {
@@ -1541,7 +1541,7 @@
     queueCloudSync(); 
   }
   
-  // ===== SENSOR NAZA =====
+  // ===== SENSOR NAZA CORRIGIDO =====
   function initSensor() {
     let sensorStatus = $('sensor-status');
     if (!sensorStatus) return;
@@ -1583,12 +1583,12 @@
     }
   }
   
-  function getStatValue(selector) {
-    let el = $(selector);
+  function getNumericFromElement(id) {
+    let el = $(id);
     if (!el) return 0;
-    let raw = (el.textContent || '').replace(/\./g, '').replace(',', '.');
-    let match = raw.match(/-?\d+(?:\.\d+)?/);
-    return match ? Number(match[0]) : 0;
+    let text = el.textContent || '';
+    let match = text.match(/\d+/);
+    return match ? parseInt(match[0]) : 0;
   }
   
   function sendSensorData() {
@@ -1598,32 +1598,56 @@
     }
     
     try {
+      // Obter dados das abas
       let cur = loadAll() || [];
       let hist = loadHist() || [];
       
-      let total = cur.length + hist.length;
+      // Calcular totais
+      let totalAtivos = cur.length;
+      let totalHistorico = hist.length;
+      let totalGeral = totalAtivos + totalHistorico;
+      
+      // Contar por status
       let pendentes = cur.filter(r => canonicalStatus(r.STATUS) === 'Pendente').length;
       let andamento = cur.filter(r => canonicalStatus(r.STATUS) === 'Em andamento').length;
-      let concluidas = cur.filter(r => canonicalStatus(r.STATUS) === 'Concluída').length + hist.length;
+      let concluidas = cur.filter(r => canonicalStatus(r.STATUS) === 'Concluída').length + totalHistorico;
       
-      let progresso = total > 0 ? ((concluidas / total) * 100).toFixed(1) : 0;
+      // Calcular progresso
+      let progresso = totalGeral > 0 ? ((concluidas / totalGeral) * 100).toFixed(1) : 0;
       
+      // Formatar para exibição no portal
       let payload = {
         sistema: 'limpeza_industrial',
-        valores: [Number(progresso), total, pendentes],
+        valores: [
+          Number(progresso),           // Percentual de conclusão
+          totalGeral,                  // Total geral
+          pendentes                     // Pendentes
+        ],
         dadosCompletos: {
-          total,
-          pendentes,
-          andamento,
-          concluidas,
-          timestamp: Date.now()
+          total: totalGeral,
+          pendentes: pendentes,
+          andamento: andamento,
+          concluidas: concluidas,
+          ativos: totalAtivos,
+          historico: totalHistorico,
+          timestamp: Date.now(),
+          dataHora: new Date().toLocaleString('pt-BR')
         },
         timestamp: Date.now()
       };
       
+      // Enviar para o Firebase Realtime Database
       sensorDb.ref('sensores/limpeza_industrial')
         .set(payload)
-        .then(() => console.log('🟢 Sensor dados enviados', payload.valores[0] + '%'))
+        .then(() => {
+          console.log('🟢 Sensor dados enviados', {
+            progresso: progresso + '%',
+            total: totalGeral,
+            pendentes: pendentes,
+            andamento: andamento,
+            concluidas: concluidas
+          });
+        })
         .catch(err => console.error('🔴 Erro ao enviar sensor:', err));
         
     } catch (e) {
@@ -1723,7 +1747,7 @@
       archived_at: isArchived ? (r.ARQUIVADO_EM || new Date().toISOString()) : null,
       updated_at: new Date().toISOString(),
       doc_key: getCloudId(r),
-      source: 'html_limpeza_v71_firebase'
+      source: 'html_limpeza_v72_firebase'
     };
   }
 
@@ -1762,7 +1786,7 @@
         projeto: 'limpeza-c745c',
         colecao_principal: COLLECTION,
         criado_em: new Date().toISOString(),
-        versao: 'v71-firebase'
+        versao: 'v72-firebase'
       });
     }
   }
