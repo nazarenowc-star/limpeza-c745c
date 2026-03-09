@@ -2935,27 +2935,4 @@ try {
 });
 </script>
 </body>
-  <!-- SENSOR NAZA PORTAL - LIMPEZA -->
-<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-database-compat.js"></script>
-<script>
-(function(){
-  const firebaseConfig={apiKey:"AIzaSyDneReMjO78JqJ-LvmSTiQqUMkxT97H6JE",authDomain:"naza-auditoria-hub.firebaseapp.com",databaseURL:"https://naza-auditoria-hub-default-rtdb.firebaseio.com",projectId:"naza-auditoria-hub"};
-  const app=firebase.apps.length?firebase.app():firebase.initializeApp(firebaseConfig);
-  const db=app.database(); const SISTEMA_ID='limpeza';
-  function numText(txt){const m=(String(txt||'')).replace(/\./g,'').replace(',','.').match(/-?\d+(?:\.\d+)?/); return m?Number(m[0]):0;}
-  function getByIds(ids){ for(const id of ids){ const el=document.getElementById(id); if(el) return numText(el.textContent); } return 0; }
-  function countByText(rx){ return [...document.querySelectorAll('table tbody tr, .card, .item, .badge, .status')].filter(el=>rx.test((el.textContent||'').toLowerCase())).length; }
-  function coletar(){
-    const pend=getByIds(['kpiPending','pendingCount','totalPendentes']) || countByText(/pend/);
-    const andamento=getByIds(['kpiAndamento','inProgressCount','totalAndamento']) || countByText(/andam|execu|progres/);
-    const concl=getByIds(['kpiDone','doneCount','totalConcluidas']) || countByText(/conclu/);
-    const total=pend+andamento+concl; const gauge=total>0?(concl/total*100):0;
-    return {sistema:SISTEMA_ID,valores:[gauge,pend,andamento],dadosCompletos:{pendentes:pend,andamento,concluidas:concl,total},timestamp:Date.now()};
-  }
-  function enviar(){const payload=coletar(); db.ref('sensores/'+SISTEMA_ID).set(payload).then(()=>console.log('🟢 Sensor Limpeza ativo',payload));}
-  setTimeout(enviar,5000); setInterval(enviar,30000);
-})();
-</script>
-</script>
 </html>
